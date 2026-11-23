@@ -42,9 +42,11 @@ body {
   color: var(--text-main);
   font-family: var(--font-main);
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* App Header */
@@ -1168,3 +1170,197 @@ body {
 .hidden {
   display: none !important;
 }
+
+/* =========================================================
+   ANDROID & MOBILE CHROME OPTIMIZATIONS
+   ========================================================= */
+
+/* Always show moderation overlay on touch devices (no hover needed) */
+@media (hover: none) {
+  .peer-mod-overlay {
+    opacity: 0.85 !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .app-title {
+    font-size: 1.05rem;
+  }
+
+  .room-meta-chips {
+    gap: 4px;
+  }
+
+  .chip-badge {
+    padding: 3px 6px;
+    font-size: 0.72rem;
+  }
+
+  .header-actions {
+    gap: 6px;
+  }
+
+  .btn-icon-label {
+    padding: 6px 10px;
+    font-size: 0.78rem;
+  }
+
+  .user-points-badge {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+  }
+
+  /* Lobby adjustments */
+  .lobby-container {
+    margin: 12px;
+    padding: 18px 14px;
+  }
+
+  .lobby-hero h1 {
+    font-size: 1.5rem;
+  }
+
+  .lobby-hero p {
+    font-size: 0.88rem;
+    margin-bottom: 16px;
+  }
+
+  .mode-selector-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  /* Study Room & Grid on Android */
+  .study-room-view {
+    padding: 8px;
+    gap: 10px;
+  }
+
+  .study-grid {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+    gap: 10px;
+  }
+
+  .study-tile {
+    height: clamp(210px, 34vh, 280px);
+  }
+
+  .pip-overlay {
+    width: 84px;
+    height: 62px;
+    top: 6px;
+    right: 6px;
+  }
+
+  .pip-swapped .pip-overlay {
+    width: 96px;
+    height: 72px;
+  }
+
+  .hud-top {
+    gap: 4px;
+  }
+
+  .user-badge, .subject-badge {
+    font-size: 0.72rem;
+    padding: 2px 6px;
+  }
+
+  .timer-display {
+    font-size: 1rem;
+  }
+
+  /* Mobile Timer Dock: 2-Row Ergonomic Touch Bar */
+  .timer-dock {
+    flex-direction: column;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 12px));
+    gap: 10px;
+  }
+
+  .timer-preset-group {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+  }
+
+  .timer-preset-group::-webkit-scrollbar {
+    display: none;
+  }
+
+  .preset-btn {
+    flex-shrink: 0;
+    padding: 6px 10px;
+    font-size: 0.75rem;
+  }
+
+  .timer-main-action {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .btn-timer {
+    flex: 1;
+    padding: 9px 12px;
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  .mic-voice-controls {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mic-voice-controls .control-btn {
+    flex: 1;
+    padding: 8px 6px;
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
+  .ptt-toggle-label {
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+
+  /* Drawers and Modals full-width on mobile */
+  .side-drawer {
+    width: 100vw;
+    max-width: 100vw;
+  }
+
+  .modal-window {
+    width: 96vw;
+    max-height: 94dvh;
+  }
+
+  .modal-body {
+    padding: 12px;
+  }
+
+  .soundboard-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .grace-warning-banner {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 10px 14px;
+  }
+}
+
