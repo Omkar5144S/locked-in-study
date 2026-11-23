@@ -38,6 +38,9 @@
     </div>
 
     <div class="header-actions">
+      <button id="btn-open-noise" class="btn-icon-label" title="Focus Audio, Brown Noise & YouTube Status">
+        <span>🎧 Noise / Music</span>
+      </button>
       <span id="user-points-badge" class="user-points-badge">150 pts</span>
       <button id="btn-open-leaderboard" class="btn-icon-label" title="View Top Grinders & Wall of Shame">
         <span>🏆 Boards</span>
@@ -215,6 +218,7 @@
           <div class="hud-top">
             <span id="local-user-name" class="user-badge">You</span>
             <span id="local-subject-goal" class="subject-badge">Deep Study</span>
+            <span id="local-listening-badge" class="listening-badge hidden">🎧 Brown Noise</span>
             <span class="points-pill">Active</span>
             <button id="btn-pip-swap" class="mod-btn" style="pointer-events:auto;" title="Swap PiP feeds">🔄 Swap</button>
           </div>
@@ -363,8 +367,63 @@
     </div>
   </div>
 
+  <!-- =========================================================
+       5. FOCUS NOISE & MUSIC MODAL
+       ========================================================= -->
+  <div id="study-noise-modal" class="modal-backdrop hidden">
+    <div class="modal-window" style="max-width:540px;">
+      <div class="modal-header">
+        <h3>🎧 Study Noise & Audio Status</h3>
+        <button id="btn-close-noise" class="drawer-close-btn">&times;</button>
+      </div>
+
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:16px;">
+        <!-- Noise Generator Presets -->
+        <div class="noise-panel-box">
+          <h4>🔊 Built-in Web Audio Generators</h4>
+          <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">Zero network required. Continuous real-time focus sound synthesis.</p>
+          <div class="noise-buttons-grid">
+            <button type="button" class="btn-noise-preset" data-noise="brown">🟫 Brown Noise (ADHD)</button>
+            <button type="button" class="btn-noise-preset" data-noise="white">⬜ White Noise</button>
+            <button type="button" class="btn-noise-preset" data-noise="pink">🌧️ Pink Rain Noise</button>
+            <button type="button" class="btn-noise-preset" data-noise="binaural">🧠 40Hz Gamma Waves</button>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-top:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:0.75rem;">Volume:</span>
+              <input type="range" id="noise-volume-slider" min="0" max="100" value="50" style="width:100px;">
+            </div>
+            <button type="button" id="btn-stop-noise" class="btn-timer btn-reset" style="padding:4px 12px; font-size:0.75rem;">⏹️ Stop Noise</button>
+          </div>
+        </div>
+
+        <!-- YouTube / Music Status & Peer Callout Accountability -->
+        <div class="noise-panel-box">
+          <h4>📱 Now Listening (YouTube / External Music)</h4>
+          <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">
+            Shown next to your name in the room so peers know you're in study mode. If caught playing non-study pop/party songs, peers can call you out!
+          </p>
+          <div class="form-group" style="margin-bottom:8px;">
+            <input type="text" id="input-custom-track" class="form-input" placeholder="e.g. YouTube: Lofi Girl Study Stream or Drake - Nonstop">
+          </div>
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+            <label style="font-size:0.78rem; display:flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="checkbox" id="check-is-study-audio" checked>
+              <span>Verified Focus Audio (Lofi / Instrumental / Classical)</span>
+            </label>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" id="btn-set-custom-track" class="btn-primary-action" style="padding:8px 14px; font-size:0.85rem;">Broadcast Track Status</button>
+            <button type="button" id="btn-clear-track" class="btn-timer btn-reset" style="padding:8px 12px; font-size:0.85rem;">Clear</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- App Modular Scripts -->
   <script src="js/soundboard-admin.js"></script>
+  <script src="js/noise-generator.js"></script>
   <script src="js/firebase-config.js"></script>
   <script src="js/leaderboard.js"></script>
   <script src="js/timer.js"></script>

@@ -627,6 +627,90 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // 11. Focus Audio & Study Noise Lounge
+  const openNoiseBtn = document.getElementById('btn-open-noise');
+  const closeNoiseBtn = document.getElementById('btn-close-noise');
+  const noiseModal = document.getElementById('study-noise-modal');
+  const noiseVolSlider = document.getElementById('noise-volume-slider');
+  const stopNoiseBtn = document.getElementById('btn-stop-noise');
+  const customTrackInput = document.getElementById('input-custom-track');
+  const checkStudyAudio = document.getElementById('check-is-study-audio');
+  const setTrackBtn = document.getElementById('btn-set-custom-track');
+  const clearTrackBtn = document.getElementById('btn-clear-track');
+
+  if (openNoiseBtn && noiseModal) {
+    openNoiseBtn.addEventListener('click', () => {
+      noiseModal.classList.remove('hidden');
+    });
+  }
+
+  if (closeNoiseBtn && noiseModal) {
+    closeNoiseBtn.addEventListener('click', () => {
+      noiseModal.classList.add('hidden');
+    });
+  }
+
+  // Preset noise buttons
+  document.querySelectorAll('.btn-noise-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.btn-noise-preset').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const noiseType = btn.getAttribute('data-noise');
+
+      if (window.StudyNoise) {
+        if (noiseType === 'brown') window.StudyNoise.playBrownNoise();
+        else if (noiseType === 'white') window.StudyNoise.playWhiteNoise();
+        else if (noiseType === 'pink') window.StudyNoise.playPinkNoise();
+        else if (noiseType === 'binaural') window.StudyNoise.playBinauralBeats();
+      }
+    });
+  });
+
+  if (noiseVolSlider) {
+    noiseVolSlider.addEventListener('input', (e) => {
+      if (window.StudyNoise) {
+        window.StudyNoise.setVolume(parseInt(e.target.value, 10) / 100);
+      }
+    });
+  }
+
+  if (stopNoiseBtn) {
+    stopNoiseBtn.addEventListener('click', () => {
+      document.querySelectorAll('.btn-noise-preset').forEach(b => b.classList.remove('active'));
+      if (window.StudyNoise) {
+        window.StudyNoise.stopNoise();
+        window.StudyNoise.setNowListening('None');
+      }
+    });
+  }
+
+  // Set YouTube / External track status
+  if (setTrackBtn && customTrackInput) {
+    setTrackBtn.addEventListener('click', () => {
+      const track = (customTrackInput.value || '').trim();
+      const isApproved = checkStudyAudio ? checkStudyAudio.checked : true;
+      if (!track) {
+        alert('Please enter a track title or YouTube stream name.');
+        return;
+      }
+      if (window.StudyNoise) {
+        window.StudyNoise.setCustomStudyTrack(track, isApproved);
+        alert(`Broadcasting audio status: "${track}" (${isApproved ? 'Focus Audio' : 'Non-Study Alert!'})`);
+      }
+      if (noiseModal) noiseModal.classList.add('hidden');
+    });
+  }
+
+  if (clearTrackBtn) {
+    clearTrackBtn.addEventListener('click', () => {
+      if (customTrackInput) customTrackInput.value = '';
+      if (window.StudyNoise) {
+        window.StudyNoise.stopNoise();
+        window.StudyNoise.setNowListening('None');
+      }
+    });
+  }
+
   // Initial HUD render
   if (window.Leaderboard) {
     window.Leaderboard.renderHUD();

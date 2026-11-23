@@ -140,6 +140,14 @@ const TRIGGER_DEFINITIONS = [
 
   // Group C: Peer-to-Peer "Snitch & Accountability" Triggers (Social)
   {
+    id: 'PEER_NON_STUDY_MUSIC',
+    name: 'Peer Callout: Not Study Music! (Party/Pop/Rap)',
+    group: 'Peer Accountability',
+    desc: 'Peer caught you streaming non-study music/songs instead of approved focus audio.',
+    penalty: 25,
+    synthType: 'bruh'
+  },
+  {
     id: 'PEER_NON_STUDY_CONTENT',
     name: 'Peer Callout: Non-Study Content',
     group: 'Peer Accountability',

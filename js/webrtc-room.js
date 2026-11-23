@@ -305,6 +305,10 @@ class WebRTCRoomManager {
           window.location.reload();
         }
         break;
+
+      case 'NOW_LISTENING':
+        this.updateRemoteListeningStatus(senderPeerId, data);
+        break;
     }
   }
 
@@ -331,6 +335,7 @@ class WebRTCRoomManager {
           <div class="hud-top">
             <span class="user-badge">${this.escapeHtml(displayName)}</span>
             <span class="subject-badge">${this.escapeHtml(subject)}</span>
+            <span class="listening-badge-remote hidden">🎧</span>
             <span class="points-pill">150 pts</span>
           </div>
           <div class="hud-bottom">
@@ -344,6 +349,7 @@ class WebRTCRoomManager {
           <button class="mod-btn hide-tile-btn" title="Hide video">👁️ Hide</button>
           <button class="mod-btn snitch-btn" title="Call out distraction">🎯 Call Out</button>
           <div class="snitch-menu hidden">
+            <button data-trigger="PEER_NON_STUDY_MUSIC">🎶 Not Study Music!</button>
             <button data-trigger="PEER_NON_STUDY_CONTENT">📺 Non-Study Screen</button>
             <button data-trigger="PEER_DOOMSCROLLING">📱 Doomscrolling</button>
             <button data-trigger="PEER_ON_PHONE">🤳 On Phone</button>
@@ -432,6 +438,25 @@ class WebRTCRoomManager {
     }
     if (data.points !== undefined) {
       tile.querySelector('.points-pill').textContent = `${data.points} pts`;
+    }
+  }
+
+  updateRemoteListeningStatus(remotePeerId, data) {
+    const tile = document.getElementById(`tile-${remotePeerId}`);
+    if (!tile) return;
+    const badge = tile.querySelector('.listening-badge-remote');
+    if (!badge) return;
+
+    if (!data.trackTitle || data.trackTitle === 'None') {
+      badge.classList.add('hidden');
+    } else {
+      badge.classList.remove('hidden');
+      badge.innerHTML = `🎧 ${this.escapeHtml(data.trackTitle)}`;
+      if (data.isStudyApproved) {
+        badge.className = 'listening-badge-remote listening-badge study-approved';
+      } else {
+        badge.className = 'listening-badge-remote listening-badge non-study-warning';
+      }
     }
   }
 
