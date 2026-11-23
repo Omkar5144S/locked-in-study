@@ -89,11 +89,42 @@
       </div>
 
       <div class="form-group">
-        <label for="input-custom-room">Room Name (Optional)</label>
-        <input type="text" id="input-custom-room" class="form-input" placeholder="focus-lobby-1 (Leaves open for public matchmaking)">
+        <label>Room Connection Type</label>
+        <div class="room-type-toggle">
+          <button type="button" class="room-type-btn active" id="tab-btn-public">🌐 Public Matchmaking</button>
+          <button type="button" class="room-type-btn" id="tab-btn-private">🔒 Private Room</button>
+        </div>
       </div>
 
-      <button id="btn-join-room" class="btn-primary-action">Join Public Study Room</button>
+      <!-- Public Rooms Matchmaking Section -->
+      <div id="section-public-room" class="room-section">
+        <div class="public-room-browser">
+          <div class="public-room-header">
+            <span>Live Public Study Lobbies</span>
+            <span class="refresh-pill" id="btn-refresh-rooms">🔄 Refresh</span>
+          </div>
+          <div class="public-room-list" id="public-room-list">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+        <button id="btn-quick-join-public" class="btn-primary-action">⚡ Quick Join Public Lobby</button>
+      </div>
+
+      <!-- Private Room Section -->
+      <div id="section-private-room" class="room-section hidden">
+        <div class="private-room-card">
+          <div class="form-group" style="margin-bottom:12px;">
+            <label for="input-private-room">Private Room Code / Name</label>
+            <input type="text" id="input-private-room" class="form-input" placeholder="e.g. med-mcat-grind">
+          </div>
+          <div class="form-group" style="margin-bottom:14px;">
+            <label for="input-private-passcode">Room Passcode (Optional)</label>
+            <input type="password" id="input-private-passcode" class="form-input" placeholder="Optional security PIN/password">
+          </div>
+          <p class="private-tip">💡 Only friends with your room code & passcode can join your study grid.</p>
+        </div>
+        <button id="btn-join-private" class="btn-primary-action btn-private-action">🚀 Enter Private Room</button>
+      </div>
     </div>
   </main>
 

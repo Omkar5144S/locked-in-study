@@ -94,8 +94,10 @@ class WebRTCRoomManager {
   }
 
   // Connect to PeerJS Mesh
-  async joinStudyRoom(requestedRoomId) {
-    this.roomId = requestedRoomId || 'lockedin-lobby-1';
+  async joinStudyRoom(requestedRoomId, isPrivate = false, passcode = null) {
+    this.roomId = requestedRoomId || 'focus-lobby-1';
+    this.isPrivate = isPrivate;
+    this.passcode = passcode ? String(passcode).trim() : null;
 
     // Construct a sanitized peer ID
     const myUid = (window.Leaderboard && window.Leaderboard.currentUser.uid) || 'u' + Math.random().toString(36).substring(2, 7);
@@ -530,7 +532,16 @@ class WebRTCRoomManager {
   updateRoomHeader() {
     const roomBadge = document.getElementById('room-id-badge');
     if (roomBadge) {
-      roomBadge.textContent = this.roomId;
+      if (this.isPrivate) {
+        roomBadge.innerHTML = `🔒 Private: <strong>${this.escapeHtml(this.roomId)}</strong>`;
+        roomBadge.style.borderColor = '#6366f1';
+        roomBadge.style.color = '#c7d2fe';
+      } else {
+        const cleanName = this.roomId.replace(/^focus-/, '').replace(/^lockedin-/, '');
+        roomBadge.innerHTML = `🌐 Public: <strong>${this.escapeHtml(cleanName)}</strong>`;
+        roomBadge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+        roomBadge.style.color = '#a7f3d0';
+      }
     }
     this.updateRoomParticipantCount();
   }
