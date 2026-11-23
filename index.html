@@ -89,41 +89,89 @@
       </div>
 
       <div class="form-group">
-        <label>Room Connection Type</label>
-        <div class="room-type-toggle">
-          <button type="button" class="room-type-btn active" id="tab-btn-public">🌐 Public Matchmaking</button>
-          <button type="button" class="room-type-btn" id="tab-btn-private">🔒 Private Room</button>
+        <label>Study Lobby Terminal (Among Us Style)</label>
+        <div class="amongus-terminal-nav">
+          <button type="button" class="au-tab-btn active" id="tab-btn-public">
+            <span class="au-icon">🚀</span> PUBLIC
+          </button>
+          <button type="button" class="au-tab-btn" id="tab-btn-private">
+            <span class="au-icon">🔒</span> PRIVATE
+          </button>
+          <button type="button" class="au-tab-btn" id="tab-btn-host">
+            <span class="au-icon">🛠️</span> HOST
+          </button>
         </div>
       </div>
 
-      <!-- Public Rooms Matchmaking Section -->
-      <div id="section-public-room" class="room-section">
-        <div class="public-room-browser">
-          <div class="public-room-header">
-            <span>Live Public Study Lobbies</span>
-            <span class="refresh-pill" id="btn-refresh-rooms">🔄 Refresh</span>
+      <!-- 1. PUBLIC LOBBIES BROWSER -->
+      <div id="section-public-room" class="au-section">
+        <div class="au-browser-panel">
+          <div class="au-filter-bar">
+            <span class="au-label">Filter:</span>
+            <div class="au-filter-chips">
+              <button type="button" class="filter-chip active" data-filter="all">All</button>
+              <button type="button" class="filter-chip" data-filter="stem">🔬 STEM</button>
+              <button type="button" class="filter-chip" data-filter="code">💻 Code</button>
+              <button type="button" class="filter-chip" data-filter="med">🩺 Med</button>
+              <button type="button" class="filter-chip" data-filter="silent">🤫 Silent</button>
+            </div>
+            <button type="button" class="refresh-pill au-refresh-btn" id="btn-refresh-rooms">🔄</button>
           </div>
-          <div class="public-room-list" id="public-room-list">
-            <!-- Dynamically populated -->
+
+          <div class="au-room-list" id="public-room-list">
+            <!-- Dynamically populated with Among Us style room cards -->
           </div>
         </div>
-        <button id="btn-quick-join-public" class="btn-primary-action">⚡ Quick Join Public Lobby</button>
+        <button type="button" id="btn-quick-join-public" class="btn-primary-action au-action-btn">⚡ Quick Matchmake</button>
       </div>
 
-      <!-- Private Room Section -->
-      <div id="section-private-room" class="room-section hidden">
-        <div class="private-room-card">
-          <div class="form-group" style="margin-bottom:12px;">
-            <label for="input-private-room">Private Room Code / Name</label>
-            <input type="text" id="input-private-room" class="form-input" placeholder="e.g. med-mcat-grind">
+      <!-- 2. PRIVATE ROOM (ENTER CODE) -->
+      <div id="section-private-room" class="au-section hidden">
+        <div class="au-private-panel">
+          <div class="au-code-box">
+            <label for="input-private-room">ENTER ROOM CODE</label>
+            <div class="au-input-row">
+              <input type="text" id="input-private-room" class="form-input au-code-input" placeholder="ROOM CODE" maxlength="15">
+              <button type="button" id="btn-submit-code-arrow" class="au-arrow-btn" title="Enter">➔</button>
+            </div>
           </div>
-          <div class="form-group" style="margin-bottom:14px;">
-            <label for="input-private-passcode">Room Passcode (Optional)</label>
-            <input type="password" id="input-private-passcode" class="form-input" placeholder="Optional security PIN/password">
+          <div class="au-passcode-box">
+            <label for="input-private-passcode">ROOM PASSCODE (IF PROTECTED)</label>
+            <input type="password" id="input-private-passcode" class="form-input" placeholder="Optional security PIN">
           </div>
-          <p class="private-tip">💡 Only friends with your room code & passcode can join your study grid.</p>
+          <p class="private-tip">🚀 Only students with this code can enter your study spaceship.</p>
         </div>
-        <button id="btn-join-private" class="btn-primary-action btn-private-action">🚀 Enter Private Room</button>
+        <button type="button" id="btn-join-private" class="btn-primary-action btn-private-action au-action-btn">Enter Private Room</button>
+      </div>
+
+      <!-- 3. HOST A ROOM (CREATE GAME) -->
+      <div id="section-host-room" class="au-section hidden">
+        <div class="au-host-panel">
+          <div class="form-group" style="margin-bottom:10px;">
+            <label for="input-host-room-title">LOBBY TITLE</label>
+            <input type="text" id="input-host-room-title" class="form-input" placeholder="e.g. Red's Focus Reactor">
+          </div>
+          <div class="form-group" style="margin-bottom:10px;">
+            <label for="select-host-subject">SUBJECT / SECTOR</label>
+            <select id="select-host-subject" class="form-input">
+              <option value="stem">🔬 STEM / Math & Physics</option>
+              <option value="code">💻 Software / LeetCode / Rust</option>
+              <option value="med">🩺 MCAT / Biology / Anatomy</option>
+              <option value="law">📚 Law / History / Reading</option>
+              <option value="silent">🤫 Absolute Silent Deep Work</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:10px;">
+            <label>POMODORO DURATION</label>
+            <div class="timer-preset-group" style="justify-content:space-between;">
+              <button type="button" class="preset-btn active host-timer-btn" data-focus="25" data-break="5">25 / 5m</button>
+              <button type="button" class="preset-btn host-timer-btn" data-focus="50" data-break="10">50 / 10m</button>
+              <button type="button" class="preset-btn host-timer-btn" data-focus="60" data-break="15">60 / 15m</button>
+              <button type="button" class="preset-btn host-timer-btn" data-focus="90" data-break="15">90 / 15m</button>
+            </div>
+          </div>
+        </div>
+        <button type="button" id="btn-create-host-room" class="btn-primary-action au-action-btn" style="background: linear-gradient(135deg, #f59e0b, #d97706);">🚀 Launch New Study Lobby</button>
       </div>
     </div>
   </main>
