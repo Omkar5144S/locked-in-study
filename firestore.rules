@@ -1,0 +1,365 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users/{userId}
+    // Document ID: Firebase Auth UID
+    // Fields:
+    //   - displayName: string (required, 1-50 chars) - Public username / callsign
+    //   - photoURL: string (optional, 0-500 chars) - Profile avatar URL
+    //   - subjectGoal: string (optional, 0-100 chars) - Current focus / exam subject
+    //   - totalPoints: number (required, >= 0, <= 10000000) - Accountability score
+    //   - cleanStudyMinutes: number (required, >= 0, <= 1000000) - Verified focus time
+    //   - shameCount: number (required, >= 0, <= 100000) - Number of verified distractions
+    //   - topTrigger: string (optional, 0-100 chars) - Most frequent distraction trigger
+    //   - createdAt: timestamp (required, immutable) - Account creation timestamp
+    //   - updatedAt: timestamp (required) - Last profile sync timestamp
+    //   - isAnonymous: bool (required) - Whether using Anonymous Auth
+    //
+    // Collection: rooms/{roomId}
+    // Document ID: Room ID (string)
+    // Fields:
+    //   - name: string (required, 1-60 chars) - Study room title
+    //   - createdAt: timestamp (required, immutable) - Creation timestamp
+    //   - updatedAt: timestamp (required) - Last activity / timer sync timestamp
+    //   - hostId: string (required, 1-128 chars) - UID of the room creator / host
+    //   - participantCount: number (required, 0-8) - Current active participant count
+    //   - timerState: map (required) - Synchronized study timer
+    //       * mode: string (1-30 chars, e.g. POMODORO, BREAK)
+    //       * duration: number (0-86400 seconds)
+    //       * startedAt: timestamp | number | null (optional)
+    //       * isPaused: bool
+    //
+    // Subcollection: rooms/{roomId}/participants/{participantId}
+    // Document ID: Participant UID (matches request.auth.uid)
+    // Fields:
+    //   - userId: string (required, immutable, matches request.auth.uid)
+    //   - displayName: string (required, 1-50 chars) - Display name in room
+    //   - peerId: string (optional, 0-100 chars) - WebRTC peer connection ID
+    //   - joinedAt: timestamp (required, immutable) - Join timestamp
+    //   - lastSeen: timestamp (required) - Presence heartbeat
+    //   - status: string (required, enum: LOCKED_IN | GRACE | SHAMED | BREAK)
+    //   - isHandRaised: bool (required) - Assistance / discussion request flag
+    //   - shameReason: string (optional, 0-200 chars) - Distraction trigger reason
+    //   - timerRemaining: number (required, 0-86400 seconds)
+    //
+    // Subcollection: rooms/{roomId}/events/{eventId}
+    // Document ID: Auto-generated event ID
+    // Fields:
+    //   - type: string (required, 1-50 chars, e.g. TRIGGER_ALERT, PEER_CALLOUT, HAND_RAISE)
+    //   - senderId: string (required, matches request.auth.uid)
+    //   - senderName: string (required, 1-50 chars)
+    //   - message: string (optional, 0-500 chars)
+    //   - payload: map (optional) - Additional event context
+    //   - targetUserId: string (optional, 0-128 chars)
+    //   - timestamp: timestamp (required)
+    //
+    // Collection: leaderboard/{entryType}
+    // Document ID: Entry type (e.g. daily, weekly, all_time)
+    // Fields:
+    //   - type: string (required)
+    //   - updatedAt: timestamp (required)
+    //   - entries: list (max 100 items)
+    //
+    // Collection: wall_of_shame/{shameId}
+    // Document ID: Auto-generated shame log ID
+    // Fields:
+    //   - userId: string (required, 1-128 chars) - Shamed user UID
+    //   - displayName: string (required, 1-50 chars) - Shamed user handle
+    //   - triggerId: string (required, 1-50 chars) - Trigger category
+    //   - triggerName: string (required, 1-100 chars) - Distraction description
+    //   - timestamp: timestamp (required) - Offense timestamp
+    //   - pointsDeducted: number (required, >= 0, <= 100000)
+    //   - roomId: string (optional, 0-100 chars) - Associated room ID
+    //   - verifiedBy: string | list (optional) - Reporting user UID or peers
+    //   - evidenceUrl: string (optional, 0-500 chars)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Global Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated (supports Anonymous and Google Auth)
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    // Check if user owns the resource based on route userId
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Check if current user is an admin via Firebase Auth Custom Claims
+    function isAdmin() {
+      return isAuthenticated() &&
+        request.auth.token.keys().hasAll(['admin']) &&
+        request.auth.token.admin == true;
+    }
+
+    // Verify UID field is unchanged or matches caller UID on create
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    // Ensure uid field is not modified on update
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    // Validate that document has all required fields
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate that the document contains only allowed fields (no schema pollution)
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Validate that specified immutable fields have not been modified on update
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    // Validator for users/{userId} documents
+    function isValidUser(data) {
+      let allowedFields = [
+        'displayName', 'photoURL', 'subjectGoal', 'totalPoints',
+        'cleanStudyMinutes', 'shameCount', 'topTrigger',
+        'createdAt', 'updatedAt', 'isAnonymous'
+      ];
+
+      return data.keys().hasOnly(allowedFields) &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50 &&
+        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500)) &&
+        (!('subjectGoal' in data) || (data.subjectGoal is string && data.subjectGoal.size() <= 100)) &&
+        data.totalPoints is number && data.totalPoints >= 0 && data.totalPoints <= 10000000 &&
+        data.cleanStudyMinutes is number && data.cleanStudyMinutes >= 0 && data.cleanStudyMinutes <= 1000000 &&
+        data.shameCount is number && data.shameCount >= 0 && data.shameCount <= 100000 &&
+        (!('topTrigger' in data) || (data.topTrigger is string && data.topTrigger.size() <= 100)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.isAnonymous is bool;
+    }
+
+    // Validator for rooms/{roomId} timerState map
+    function isValidTimerState(timer) {
+      let allowedTimerKeys = ['mode', 'duration', 'startedAt', 'isPaused'];
+
+      return timer is map &&
+        timer.keys().hasOnly(allowedTimerKeys) &&
+        timer.mode is string && timer.mode.size() >= 1 && timer.mode.size() <= 30 &&
+        timer.duration is number && timer.duration >= 0 && timer.duration <= 86400 &&
+        (!('startedAt' in timer) || timer.startedAt == null || timer.startedAt is timestamp || timer.startedAt is number) &&
+        timer.isPaused is bool;
+    }
+
+    // Validator for rooms/{roomId} documents
+    function isValidRoom(data) {
+      let allowedFields = ['name', 'createdAt', 'updatedAt', 'hostId', 'participantCount', 'timerState'];
+
+      return data.keys().hasOnly(allowedFields) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 60 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.hostId is string && data.hostId.size() >= 1 && data.hostId.size() <= 128 &&
+        data.participantCount is number && data.participantCount >= 0 && data.participantCount <= 8 &&
+        isValidTimerState(data.timerState);
+    }
+
+    // Validator for rooms/{roomId}/participants/{participantId} documents
+    function isValidParticipant(data) {
+      let allowedFields = [
+        'userId', 'displayName', 'peerId', 'joinedAt', 'lastSeen',
+        'status', 'isHandRaised', 'shameReason', 'timerRemaining'
+      ];
+
+      return data.keys().hasOnly(allowedFields) &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50 &&
+        (!('peerId' in data) || (data.peerId is string && data.peerId.size() <= 100)) &&
+        data.joinedAt is timestamp &&
+        data.lastSeen is timestamp &&
+        data.status in ['LOCKED_IN', 'GRACE', 'SHAMED', 'BREAK'] &&
+        data.isHandRaised is bool &&
+        (!('shameReason' in data) || (data.shameReason is string && data.shameReason.size() <= 200)) &&
+        data.timerRemaining is number && data.timerRemaining >= 0 && data.timerRemaining <= 86400;
+    }
+
+    // Validator for rooms/{roomId}/events/{eventId} documents
+    function isValidRoomEvent(data) {
+      let allowedFields = ['type', 'senderId', 'senderName', 'message', 'payload', 'targetUserId', 'timestamp'];
+
+      return data.keys().hasOnly(allowedFields) &&
+        data.type is string && data.type.size() >= 1 && data.type.size() <= 50 &&
+        data.senderId is string && data.senderId == request.auth.uid &&
+        data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 50 &&
+        (!('message' in data) || (data.message is string && data.message.size() <= 500)) &&
+        (!('payload' in data) || (data.payload is map)) &&
+        (!('targetUserId' in data) || (data.targetUserId is string && data.targetUserId.size() <= 128)) &&
+        data.timestamp is timestamp;
+    }
+
+    // Validator for wall_of_shame/{shameId} documents
+    function isValidShameLog(data) {
+      let allowedFields = [
+        'userId', 'displayName', 'triggerId', 'triggerName',
+        'timestamp', 'pointsDeducted', 'roomId', 'verifiedBy', 'evidenceUrl'
+      ];
+
+      return data.keys().hasOnly(allowedFields) &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50 &&
+        data.triggerId is string && data.triggerId.size() >= 1 && data.triggerId.size() <= 50 &&
+        data.triggerName is string && data.triggerName.size() >= 1 && data.triggerName.size() <= 100 &&
+        data.timestamp is timestamp &&
+        data.pointsDeducted is number && data.pointsDeducted >= 0 && data.pointsDeducted <= 100000 &&
+        (!('roomId' in data) || (data.roomId is string && data.roomId.size() <= 100)) &&
+        (!('verifiedBy' in data) || (data.verifiedBy is list && data.verifiedBy.size() <= 10) || (data.verifiedBy is string && data.verifiedBy.size() <= 128)) &&
+        (!('evidenceUrl' in data) || (data.evidenceUrl is string && data.evidenceUrl.size() <= 500));
+    }
+
+    // ===============================================================
+    // Rules Collections
+    // ===============================================================
+
+    // Root-level default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 1. Users collection: Public profiles for room displays & accountability leaderboard
+    match /users/{userId} {
+      // Authenticated users can view user profiles (no PII is stored in this collection)
+      allow read: if isAuthenticated();
+
+      // Only the authenticated user can create their own profile
+      allow create: if isOwner(userId) &&
+        isValidUser(request.resource.data);
+
+      // Only the authenticated user can update their profile; creation timestamp is immutable
+      allow update: if isOwner(userId) &&
+        isValidUser(request.resource.data) &&
+        areImmutableFieldsUnchanged(['createdAt']);
+
+      // Account deletion allowed only by the owner
+      allow delete: if isOwner(userId);
+    }
+
+    // 2. Rooms collection: Public lobby & multi-user study sessions
+    match /rooms/{roomId} {
+      // Any authenticated user can read available rooms
+      allow read: if isAuthenticated();
+
+      // Authenticated users can create rooms and become initial host
+      allow create: if isAuthenticated() &&
+        request.resource.data.hostId == request.auth.uid &&
+        isValidRoom(request.resource.data);
+
+      // Authenticated users can update rooms (e.g. syncing timer, joining/leaving participantCount <= 8)
+      // Non-host users cannot alter hostId or createdAt
+      allow update: if isAuthenticated() &&
+        isValidRoom(request.resource.data) &&
+        (
+          resource.data.hostId == request.auth.uid ||
+          areImmutableFieldsUnchanged(['createdAt', 'hostId'])
+        );
+
+      // Only the host or an admin can delete a room
+      allow delete: if isAuthenticated() &&
+        (resource.data.hostId == request.auth.uid || isAdmin());
+
+      // 3. Subcollection: Active participants in a study room
+      match /participants/{participantId} {
+        // Any authenticated user in the app can inspect active room participants
+        allow read: if isAuthenticated();
+
+        // User can only create their own participant document
+        allow create: if isAuthenticated() &&
+          request.auth.uid == participantId &&
+          request.resource.data.userId == request.auth.uid &&
+          isValidParticipant(request.resource.data);
+
+        // User can only update their own participant doc; userId and joinedAt are immutable
+        allow update: if isAuthenticated() &&
+          (request.auth.uid == participantId || resource.data.userId == request.auth.uid) &&
+          isValidParticipant(request.resource.data) &&
+          areImmutableFieldsUnchanged(['userId', 'joinedAt']);
+
+        // User can remove their own participant doc, or room host can remove participant
+        allow delete: if isAuthenticated() &&
+          (
+            request.auth.uid == participantId ||
+            resource.data.userId == request.auth.uid ||
+            (exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+             get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid)
+          );
+      }
+
+      // 4. Subcollection: Ephemeral room events (trigger alerts, peer callout votes, hand raises, chat/nudge)
+      match /events/{eventId} {
+        // Any authenticated user in the room can listen to events
+        allow read: if isAuthenticated();
+
+        // Authenticated participants can create events stamped with their own senderId
+        allow create: if isAuthenticated() &&
+          isValidRoomEvent(request.resource.data);
+
+        // Room events are append-only audit entries; updates disallowed
+        allow update: if false;
+
+        // Sender or host can prune events
+        allow delete: if isAuthenticated() &&
+          (
+            resource.data.senderId == request.auth.uid ||
+            (exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+             get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid)
+          );
+      }
+    }
+
+    // 5. Leaderboard collection: Aggregate rankings (daily, weekly, all-time)
+    match /leaderboard/{entryType} {
+      // Authenticated users can read the leaderboard
+      allow read: if isAuthenticated();
+
+      // Only trusted system admin or Cloud Functions can update aggregate leaderboard records
+      allow write: if isAdmin();
+    }
+
+    // 6. Wall of Shame: Public accountability log of focus breaks & distractions
+    match /wall_of_shame/{shameId} {
+      // Readable by all authenticated users (including Anonymous Auth users)
+      allow read: if isAuthenticated();
+
+      // Created by the user themselves upon distraction detection, or peer-verified in room
+      allow create: if isAuthenticated() &&
+        isValidShameLog(request.resource.data) &&
+        (
+          request.resource.data.userId == request.auth.uid ||
+          ('verifiedBy' in request.resource.data && (
+            (request.resource.data.verifiedBy is string && request.resource.data.verifiedBy == request.auth.uid) ||
+            (request.resource.data.verifiedBy is list && request.resource.data.verifiedBy.hasAny([request.auth.uid]))
+          ))
+        );
+
+      // Public shame logs are immutable once recorded
+      allow update: if false;
+
+      // Only admin can remove a shame log
+      allow delete: if isAdmin();
+    }
+  }
+}
