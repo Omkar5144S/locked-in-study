@@ -31,66 +31,115 @@ class WebRTCRoomManager {
     this.participants = new Map(); // uid -> data
   }
 
-  // Initialize Local Media Streams
+  // Initialize Local Media Streams with Multi-Tier Fallback
   async initLocalMedia({ mode, videoDeviceId, audioDeviceId }) {
-    this.isDualFeedActive = (mode === 'dual');
+    // Detect mobile touch devices: disable forcing getDisplayMedia on mobile
+    const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.innerWidth < 768;
+    this.isDualFeedActive = (mode === 'dual') && !isMobile;
 
+    const camConstraints = {
+      video: videoDeviceId ? { deviceId: { exact: videoDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } } : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: audioDeviceId ? { deviceId: { exact: audioDeviceId } } : true
+    };
+
+    // 1. Attempt standard camera + mic
     try {
-      // 1. Get Camera + Mic Stream
-      const camConstraints = {
-        video: videoDeviceId ? { deviceId: { exact: videoDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } } : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-        audio: audioDeviceId ? { deviceId: { exact: audioDeviceId } } : true
-      };
-
       this.localCamStream = await navigator.mediaDevices.getUserMedia(camConstraints);
-      // Mute audio by default during study session
-      this.muteMic(true);
-
-      // Attach to Local Camera Video
-      const localCamVideo = document.getElementById('local-cam-video');
-      if (localCamVideo) {
-        localCamVideo.srcObject = this.localCamStream;
-        localCamVideo.muted = true;
+    } catch (e1) {
+      console.warn('[WebRTC] Exact getUserMedia constraints failed. Trying video-only fallback...', e1);
+      try {
+        this.localCamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      } catch (e2) {
+        console.warn('[WebRTC] Camera unavailable or permission denied. Starting in standby avatar mode...', e2);
+        const name = (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Scholar';
+        this.localCamStream = this.createFallbackAvatarStream(name);
       }
+    }
 
-      // 2. If Dual Feed requested, request Screen Share
-      if (this.isDualFeedActive) {
-        try {
-          if (navigator.mediaDevices.getDisplayMedia) {
-            this.localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-              video: { cursor: 'always' },
-              audio: false
-            });
+    // Mute mic by default during study session
+    this.muteMic(true);
 
-            const localScreenVideo = document.getElementById('local-screen-video');
-            if (localScreenVideo) {
-              localScreenVideo.srcObject = this.localScreenStream;
-              localScreenVideo.muted = true;
-            }
+    // Attach to Local Camera Video
+    const localCamVideo = document.getElementById('local-cam-video');
+    if (localCamVideo && this.localCamStream) {
+      localCamVideo.srcObject = this.localCamStream;
+      localCamVideo.muted = true;
+      localCamVideo.play().catch(e => console.log('[WebRTC] Local video play:', e));
+    }
 
-            // Detect user stopping screen share from browser banner
-            this.localScreenStream.getVideoTracks()[0].onended = () => {
-              if (window.TriggerEngine) {
-                window.TriggerEngine.triggerCandidate('SCREEN_OFF_MID_SESSION', 'Screen sharing was ended!');
-              }
-            };
-          } else {
-            console.warn('[WebRTC] getDisplayMedia not supported on this browser/device; falling back to single cam.');
-            this.isDualFeedActive = false;
+    // 2. If Dual Feed requested on desktop, request Screen Share
+    if (this.isDualFeedActive) {
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+          this.localScreenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { cursor: 'always' },
+            audio: false
+          });
+
+          const localScreenVideo = document.getElementById('local-screen-video');
+          if (localScreenVideo) {
+            localScreenVideo.srcObject = this.localScreenStream;
+            localScreenVideo.muted = true;
           }
-        } catch (screenErr) {
-          console.warn('[WebRTC] Screen share was declined or cancelled. Running camera-only mode:', screenErr);
+
+          this.localScreenStream.getVideoTracks()[0].onended = () => {
+            if (window.TriggerEngine) {
+              window.TriggerEngine.triggerCandidate('SCREEN_OFF_MID_SESSION', 'Screen sharing was ended!');
+            }
+          };
+        } else {
           this.isDualFeedActive = false;
         }
+      } catch (screenErr) {
+        console.warn('[WebRTC] Screen share was declined or cancelled. Running camera-only mode:', screenErr);
+        this.isDualFeedActive = false;
       }
-
-      this.updateTileLayout();
-      return true;
-    } catch (err) {
-      console.error('[WebRTC] Failed to access local camera/mic:', err);
-      alert('Camera access is required for accountability verification. Please check browser camera permissions.');
-      return false;
     }
+
+    this.updateTileLayout();
+    return true;
+  }
+
+  // Generates an animated placeholder video stream if camera is unavailable
+  createFallbackAvatarStream(displayName) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    const ctx = canvas.getContext('2d');
+
+    const draw = () => {
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Gradient circle avatar
+      const grad = ctx.createLinearGradient(160, 100, 480, 380);
+      grad.addColorStop(0, '#3b82f6');
+      grad.addColorStop(1, '#8b5cf6');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(320, 200, 75, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Emoji
+      ctx.font = '64px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🎓', 320, 200);
+
+      // Name
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 26px sans-serif';
+      ctx.fillText(displayName || 'Scholar', 320, 320);
+
+      // Status
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '16px sans-serif';
+      ctx.fillText('LOCKED IN (Standby Cam)', 320, 355);
+    };
+
+    draw();
+    setInterval(draw, 1000);
+    return canvas.captureStream ? canvas.captureStream(5) : null;
   }
 
   // Connect to PeerJS Mesh with Deterministic Slot Allocation (Zero-Config Mesh)
@@ -354,6 +403,15 @@ class WebRTCRoomManager {
         passcode: this.passcode,
         slot: this.mySlot
       });
+
+      // If we are authenticated Admin, automatically push our custom soundboard to this peer!
+      if (window.Soundboard && window.Soundboard.isAdminAuthenticated) {
+        conn.send({
+          type: 'ADMIN_SOUNDBOARD_SYNC',
+          adminName: (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Admin',
+          soundConfigs: window.Soundboard.getExportableConfigs()
+        });
+      }
     });
 
     conn.on('data', (data) => {
@@ -383,14 +441,20 @@ class WebRTCRoomManager {
     }
   }
 
-    if (window.FirebaseSync) {
-      window.FirebaseSync.broadcastEvent(this.roomId, payload);
-    }
-  }
-
   // Handle Incoming Data Messages
   handleIncomingData(data, senderPeerId) {
     if (!data || !data.type) return;
+
+    switch (data.type) {
+      case 'ADMIN_SOUNDBOARD_SYNC':
+        if (data.soundConfigs && window.Soundboard) {
+          console.log('[WebRTC] Received room-wide soundboard sync from Admin:', data.adminName);
+          window.Soundboard.applyRemoteSoundConfigs(data.soundConfigs);
+          if (window.TriggerEngine && window.TriggerEngine.showShameToast) {
+            window.TriggerEngine.showShameToast(`🔊 Custom sounds synced from Admin (${data.adminName || 'Admin'})!`);
+          }
+        }
+        break;
 
     switch (data.type) {
       case 'HANDSHAKE':

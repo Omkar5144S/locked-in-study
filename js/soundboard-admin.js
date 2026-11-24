@@ -358,6 +358,11 @@ class SoundboardManager {
         console.warn('[IndexedDB] Failed to save blob:', e);
       }
     }
+
+    // Auto-sync custom sounds to room peers if in an active session
+    if (this.isAdminAuthenticated && window.WebRTCRoom && window.WebRTCRoom.peer) {
+      this.broadcastSoundboardToRoom();
+    }
   }
 
   async clearSoundSlot(triggerId) {
@@ -624,6 +629,56 @@ class SoundboardManager {
       return true;
     }
     return false;
+  }
+
+  // Soundboard Export & Room Sync
+  getExportableConfigs() {
+    const exportable = {};
+    for (const [key, val] of Object.entries(this.soundConfigs)) {
+      if (!val) continue;
+      exportable[key] = {
+        url: val.url || '',
+        dataUrl: (val.dataUrl && val.dataUrl.length < 500000) ? val.dataUrl : '',
+        fileName: val.fileName || '',
+        volume: val.volume !== undefined ? val.volume : 80
+      };
+    }
+    return exportable;
+  }
+
+  broadcastSoundboardToRoom() {
+    if (!this.isAdminAuthenticated) {
+      alert('Admin authentication required to broadcast soundboard.');
+      return false;
+    }
+
+    const configs = this.getExportableConfigs();
+    if (window.WebRTCRoom && window.WebRTCRoom.peer) {
+      window.WebRTCRoom.broadcastData({
+        type: 'ADMIN_SOUNDBOARD_SYNC',
+        adminName: (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Admin',
+        soundConfigs: configs
+      });
+      console.log('[Soundboard] Broadcast soundboard to all connected room peers.');
+      return true;
+    } else {
+      console.log('[Soundboard] Not currently in a WebRTC room; soundboard saved locally.');
+      return true;
+    }
+  }
+
+  applyRemoteSoundConfigs(remoteConfigs) {
+    if (!remoteConfigs || typeof remoteConfigs !== 'object') return;
+    for (const [triggerId, conf] of Object.entries(remoteConfigs)) {
+      if (!this.soundConfigs[triggerId]) {
+        this.soundConfigs[triggerId] = {};
+      }
+      if (conf.url) this.soundConfigs[triggerId].url = conf.url;
+      if (conf.dataUrl) this.soundConfigs[triggerId].dataUrl = conf.dataUrl;
+      if (conf.fileName) this.soundConfigs[triggerId].fileName = conf.fileName;
+      if (conf.volume !== undefined) this.soundConfigs[triggerId].volume = conf.volume;
+    }
+    console.log('[Soundboard] Successfully loaded room soundboard from Admin.');
   }
 
   // Soundboard Backup & Restore

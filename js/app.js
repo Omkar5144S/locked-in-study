@@ -214,14 +214,43 @@ document.addEventListener('DOMContentLoaded', () => {
       const subjectSelect = document.getElementById('select-host-subject');
       const title = (titleInput && titleInput.value.trim()) || "Commander's Bridge";
       const subject = subjectSelect ? subjectSelect.options[subjectSelect.selectedIndex].text : 'General Deep Work';
+      const category = subjectSelect ? subjectSelect.value : 'stem';
 
       // Set host preset on timer
       if (window.StudyTimer) {
         window.StudyTimer.setPreset(hostFocus, hostBreak);
       }
 
-      const generatedId = `host-${title.toLowerCase().replace(/[^a-z0-9_-]/g, '')}-${Math.random().toString(36).substring(2, 6)}`;
-      startStudySession(generatedId, false, null);
+      // Generate a clean room ID based on title
+      const cleanTitle = title.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 20) || 'focus-room';
+      const generatedId = `lobby-${cleanTitle}`;
+
+      // Register this newly created lobby into the public room list
+      const existing = defaultPublicRooms.find(r => r.id === generatedId);
+      if (!existing) {
+        defaultPublicRooms.unshift({
+          id: generatedId,
+          name: title,
+          host: displayNameInput?.value || 'Host',
+          category: category,
+          tag: subject,
+          timer: `${hostFocus}m`,
+          color: 'color-orange',
+          online: 1
+        });
+        renderPublicRooms();
+      }
+
+      createHostBtn.disabled = true;
+      const originalText = createHostBtn.textContent;
+      createHostBtn.textContent = '⏳ Launching Lobby...';
+
+      startStudySession(generatedId, false, null).catch(err => {
+        console.error('[App] Failed to launch host session:', err);
+      }).finally(() => {
+        createHostBtn.disabled = false;
+        createHostBtn.textContent = originalText;
+      });
     });
   }
 
@@ -245,16 +274,27 @@ document.addEventListener('DOMContentLoaded', () => {
       window.Leaderboard.renderHUD();
     }
 
-    // Show loading state
-    if (quickJoinPublicBtn) quickJoinPublicBtn.disabled = true;
-    if (joinPrivateBtn) joinPrivateBtn.disabled = true;
+    // Show loading state on all entry buttons
+    if (quickJoinPublicBtn) {
+      quickJoinPublicBtn.disabled = true;
+      quickJoinPublicBtn.textContent = '⏳ Connecting...';
+    }
+    if (joinPrivateBtn) {
+      joinPrivateBtn.disabled = true;
+      joinPrivateBtn.textContent = '⏳ Entering...';
+    }
 
-    // Initialize media
-    const mediaSuccess = await window.WebRTCRoom.initLocalMedia({ mode: selectedMode });
-    if (!mediaSuccess) {
-      if (quickJoinPublicBtn) quickJoinPublicBtn.disabled = false;
-      if (joinPrivateBtn) joinPrivateBtn.disabled = false;
-      return;
+    // Initialize media with multi-tier fallback (never blocks joining!)
+    await window.WebRTCRoom.initLocalMedia({ mode: selectedMode });
+
+    // Reset button states
+    if (quickJoinPublicBtn) {
+      quickJoinPublicBtn.disabled = false;
+      quickJoinPublicBtn.textContent = '⚡ Quick Matchmake';
+    }
+    if (joinPrivateBtn) {
+      joinPrivateBtn.disabled = false;
+      joinPrivateBtn.textContent = 'Enter Private Room';
     }
 
     // Join WebRTC room
@@ -716,6 +756,19 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('Admin PIN updated successfully.');
       } else {
         alert('Failed to update PIN. Verify your current PIN and new PIN format.');
+      }
+    });
+  }
+
+  // Admin Studio: Broadcast Soundboard to Room
+  const broadcastSoundboardBtn = document.getElementById('btn-broadcast-soundboard');
+  if (broadcastSoundboardBtn) {
+    broadcastSoundboardBtn.addEventListener('click', () => {
+      if (window.Soundboard) {
+        const ok = window.Soundboard.broadcastSoundboardToRoom();
+        if (ok) {
+          alert('Custom soundboard successfully broadcast to all study room members!');
+        }
       }
     });
   }
