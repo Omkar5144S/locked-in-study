@@ -211,6 +211,92 @@ body {
   transition: all 0.3s var(--spring-ease);
 }
 
+/* Smart Room Invite Banner */
+.invite-banner {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.22) 0%, rgba(99, 102, 241, 0.28) 100%);
+  border: 1.5px solid rgba(99, 102, 241, 0.6);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 10px 25px rgba(99, 102, 241, 0.25);
+  animation: banner-pulse 2.2s infinite ease-in-out;
+}
+
+@keyframes banner-pulse {
+  0%, 100% {
+    box-shadow: 0 10px 25px rgba(99, 102, 241, 0.25);
+    border-color: rgba(99, 102, 241, 0.6);
+  }
+  50% {
+    box-shadow: 0 16px 40px rgba(99, 102, 241, 0.5);
+    border-color: rgba(129, 140, 248, 0.9);
+  }
+}
+
+.invite-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+}
+
+.invite-banner-content .invite-icon {
+  font-size: 2.2rem;
+}
+
+.invite-banner-content h4 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 3px;
+  color: #ffffff;
+}
+
+.invite-banner-content p {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.invite-banner-content strong {
+  color: #38bdf8;
+  font-family: monospace;
+  font-size: 0.95rem;
+}
+
+@media (max-width: 640px) {
+  .invite-banner {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+  .invite-banner-content {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+[data-theme="vibrant"] .invite-banner {
+  background: linear-gradient(135deg, rgba(224, 231, 255, 0.9) 0%, rgba(219, 234, 254, 0.95) 100%);
+  border: 1.5px solid #818cf8;
+  box-shadow: 0 10px 25px rgba(99, 102, 241, 0.15);
+}
+
+[data-theme="vibrant"] .invite-banner-content h4 {
+  color: #1e1b4b;
+}
+
+[data-theme="vibrant"] .invite-banner-content p {
+  color: #475569;
+}
+
+[data-theme="vibrant"] .invite-banner-content strong {
+  color: #2563eb;
+}
+
 .lobby-hero h1 {
   font-size: 2.1rem;
   font-weight: 800;

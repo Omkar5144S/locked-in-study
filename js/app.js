@@ -53,12 +53,30 @@ document.addEventListener('DOMContentLoaded', () => {
   if (tabBtnPrivate) tabBtnPrivate.addEventListener('click', () => setRoomMode('private'));
   if (tabBtnHost) tabBtnHost.addEventListener('click', () => setRoomMode('host'));
 
-  // Pre-fill from URL params
+  // Pre-fill & Handle Smart Room Invites from URL params
   if (roomParam) {
-    if (privateParam === '1' || privateParam === 'true') {
+    const isPrivate = (privateParam === '1' || privateParam === 'true');
+    const inviteBanner = document.getElementById('invite-banner');
+    const inviteRoomName = document.getElementById('invite-room-name');
+    const acceptInviteBtn = document.getElementById('btn-accept-invite');
+
+    if (inviteBanner && inviteRoomName) {
+      inviteBanner.classList.remove('hidden');
+      inviteRoomName.textContent = roomParam + (isPrivate ? ' (Private Spaceship)' : ' (Public Lobby)');
+    }
+
+    if (isPrivate) {
       setRoomMode('private');
       if (privateRoomInput) privateRoomInput.value = roomParam;
       if (keyParam && privatePasscodeInput) privatePasscodeInput.value = keyParam;
+    }
+
+    if (acceptInviteBtn) {
+      acceptInviteBtn.addEventListener('click', () => {
+        const cleanName = roomParam.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        const targetRoomId = isPrivate ? (cleanName.startsWith('private-') ? cleanName : `private-${cleanName}`) : roomParam;
+        startStudySession(targetRoomId, isPrivate, keyParam || null);
+      });
     }
   }
 
@@ -259,9 +277,26 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('lobby-view').classList.add('hidden');
     document.getElementById('study-room-view').classList.remove('hidden');
 
+    // Show Leave Room button in header
+    const leaveBtnHeader = document.getElementById('btn-leave-room-header');
+    if (leaveBtnHeader) leaveBtnHeader.style.display = 'inline-flex';
+
     // Initialize Study Timer
     window.StudyTimer.resetTimer();
   }
+
+  // Leave Room Handlers (Header & Dock)
+  const leaveBtnHeader = document.getElementById('btn-leave-room-header');
+  const leaveBtnDock = document.getElementById('btn-leave-room-dock');
+  [leaveBtnHeader, leaveBtnDock].forEach(btn => {
+    if (btn) {
+      btn.addEventListener('click', () => {
+        if (confirm('Leave current study room and return to the lobby?')) {
+          window.WebRTCRoom.leaveStudyRoom();
+        }
+      });
+    }
+  });
 
   // 4. Copy Invite Link
   const copyLinkBtn = document.getElementById('btn-copy-invite');
@@ -270,8 +305,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const currentRoom = window.WebRTCRoom.roomId || 'focus-lobby-1';
       const isPrivate = window.WebRTCRoom.isPrivate;
       const passcode = window.WebRTCRoom.passcode;
+      const displayRoom = currentRoom.replace(/^private-/, '');
 
-      let inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(currentRoom)}`;
+      let inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(displayRoom)}`;
       if (isPrivate) {
         inviteUrl += '&private=1';
         if (passcode) {
@@ -281,8 +317,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       navigator.clipboard.writeText(inviteUrl).then(() => {
         const originalText = copyLinkBtn.innerHTML;
-        copyLinkBtn.innerHTML = '<span>✅ Copied!</span>';
-        setTimeout(() => copyLinkBtn.innerHTML = originalText, 2000);
+        copyLinkBtn.innerHTML = '<span>✅ Link Copied!</span>';
+        setTimeout(() => copyLinkBtn.innerHTML = originalText, 2500);
       }).catch(() => {
         prompt('Copy invite link:', inviteUrl);
       });

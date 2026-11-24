@@ -93,105 +93,223 @@ class WebRTCRoomManager {
     }
   }
 
-  // Connect to PeerJS Mesh
+  // Connect to PeerJS Mesh with Deterministic Slot Allocation (Zero-Config Mesh)
   async joinStudyRoom(requestedRoomId, isPrivate = false, passcode = null) {
     this.roomId = requestedRoomId || 'focus-lobby-1';
     this.isPrivate = isPrivate;
     this.passcode = passcode ? String(passcode).trim() : null;
 
-    // Construct a sanitized peer ID
-    const myUid = (window.Leaderboard && window.Leaderboard.currentUser.uid) || 'u' + Math.random().toString(36).substring(2, 7);
-    this.peerId = `${this.roomId}_${myUid}`;
+    // Clean room ID: lowercase, alphanumeric and dashes, max 24 chars
+    const cleanRoom = (this.roomId || 'focus-lobby-1').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24) || 'lobby';
+    this.cleanRoom = cleanRoom;
 
+    // BroadcastChannel for instant same-browser / multi-tab discovery
+    this.initBroadcastChannel(cleanRoom);
+
+    // Find and claim an available deterministic slot (0..7)
     return new Promise((resolve, reject) => {
-      // Connect to free public PeerServer cloud
-      this.peer = new window.Peer(this.peerId, {
+      this.attemptSlotAllocation(cleanRoom, 0, resolve, reject);
+    });
+  }
+
+  initBroadcastChannel(cleanRoom) {
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        if (this.broadcastChannel) this.broadcastChannel.close();
+        this.broadcastChannel = new BroadcastChannel('lockedin_room_' + cleanRoom);
+        this.broadcastChannel.onmessage = (e) => {
+          const msg = e.data;
+          if (!msg || !msg.peerId || msg.peerId === this.peerId) return;
+          if (msg.type === 'PEER_JOINED' || msg.type === 'ANNOUNCE_SLOT') {
+            if (!this.peers.has(msg.peerId)) {
+              console.log('[BroadcastChannel] Discovered peer in room:', msg.peerId);
+              this.callPeer(msg.peerId);
+            }
+          } else if (msg.type === 'PEER_LEFT') {
+            this.removeRemoteTile(msg.peerId);
+          }
+        };
+      } catch (err) {
+        console.warn('[BroadcastChannel] Not supported or failed:', err);
+      }
+    }
+  }
+
+  postBroadcast(data) {
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage(data);
+      } catch (e) {}
+    }
+  }
+
+  attemptSlotAllocation(cleanRoom, slotIndex, resolve, reject) {
+    if (slotIndex >= this.maxRoomCapacity) {
+      alert(`Room "${this.roomId}" is currently full (8/8 online). Please try another room.`);
+      reject(new Error('Room full'));
+      return;
+    }
+
+    const candidatePeerId = `li_${cleanRoom}_${slotIndex}`;
+    console.log(`[WebRTC] Probing room slot ${slotIndex}: ${candidatePeerId}`);
+
+    let isClaimed = false;
+    let peer = null;
+
+    try {
+      peer = new window.Peer(candidatePeerId, {
         debug: 1,
         config: {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:global.stun.twilio.com:3478' }
           ]
         }
       });
+    } catch (e) {
+      console.error('[WebRTC] Peer initialization failed:', e);
+      reject(e);
+      return;
+    }
 
-      this.peer.on('open', (id) => {
-        console.log(`[WebRTC] Connected to PeerServer as ${id} in room: ${this.roomId}`);
-        this.updateRoomHeader();
+    peer.on('error', (err) => {
+      if (err.type === 'unavailable-id' && !isClaimed) {
+        console.log(`[WebRTC] Slot ${slotIndex} (${candidatePeerId}) is in use. Trying next slot...`);
+        try { peer.destroy(); } catch (e) {}
+        setTimeout(() => {
+          this.attemptSlotAllocation(cleanRoom, slotIndex + 1, resolve, reject);
+        }, 120);
+        return;
+      }
+      
+      // Benign errors: ignore peer-unavailable for unoccupied slots
+      if (err.type === 'peer-unavailable') {
+        return;
+      }
 
-        // Register with Firebase cloud presence if enabled
-        if (window.FirebaseSync) {
-          window.FirebaseSync.joinRoom(this.roomId, {
-            userId: myUid,
-            displayName: (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Scholar',
-            peerId: this.peerId,
-            status: 'LOCKED_IN',
-            isHandRaised: false
+      console.warn('[WebRTC] Peer error:', err);
+    });
+
+    peer.on('open', (id) => {
+      isClaimed = true;
+      this.mySlot = slotIndex;
+      this.peerId = id;
+      this.peer = peer;
+      console.log(`[WebRTC] 🚀 Connected as slot ${slotIndex} (${id}) in room: ${this.roomId}`);
+      this.updateRoomHeader();
+
+      // Setup incoming event handlers on this peer
+      this.setupPeerListeners();
+
+      // Post local broadcast
+      this.postBroadcast({
+        type: 'PEER_JOINED',
+        peerId: this.peerId,
+        slot: this.mySlot
+      });
+
+      // Firebase sync if configured
+      if (window.FirebaseSync && window.FirebaseSync.isConfigured) {
+        const myUid = (window.Leaderboard && window.Leaderboard.currentUser.uid) || 'u' + Math.random().toString(36).substring(2, 7);
+        window.FirebaseSync.joinRoom(this.roomId, {
+          userId: myUid,
+          displayName: (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Scholar',
+          peerId: this.peerId,
+          status: 'LOCKED_IN',
+          isHandRaised: false
+        });
+        window.FirebaseSync.listenToRoomEvents(this.roomId, (event) => {
+          this.handleIncomingData(event);
+        });
+        window.FirebaseSync.listenToRoom(this.roomId, (participantList) => {
+          participantList.forEach(p => {
+            if (p.peerId && p.peerId !== this.peerId && !this.peers.has(p.peerId)) {
+              this.callPeer(p.peerId, p);
+            }
           });
+        });
+      }
 
-          window.FirebaseSync.listenToRoomEvents(this.roomId, (event) => {
-            this.handleIncomingData(event);
-          });
-        }
+      // Connect to other 7 deterministic slots in this room
+      this.connectToRoomMesh();
 
-        // Query open peers in room via room naming convention or connect
-        this.discoverAndConnectPeers();
-        resolve(this.peerId);
-      });
+      // Start periodic probe loop for dynamic arrivals/departures
+      this.startMeshProbeLoop();
 
-      // Handle Incoming Calls (Media Streams)
-      this.peer.on('call', (call) => {
-        const streamToSend = this.localCamStream;
-        call.answer(streamToSend);
-        this.handlePeerCall(call);
-      });
-
-      // Handle Incoming Data Connections
-      this.peer.on('connection', (conn) => {
-        this.handleDataConnection(conn);
-      });
-
-      this.peer.on('error', (err) => {
-        console.warn('[WebRTC] Peer error:', err);
-        // Handle automatic room overflow if room capacity reached
-        if (err.type === 'unavailable-id') {
-          console.log('[WebRTC] ID collision, shifting to alternate peer ID...');
-        }
-      });
+      resolve(this.peerId);
     });
   }
 
-  // Discover peers in the current room
-  discoverAndConnectPeers() {
-    // In decentralized mesh mode without central signaling server query,
-    // we broadcast heartbeat / probe known participants or sync via Firebase
-    if (window.FirebaseSync && window.FirebaseSync.isConfigured) {
-      window.FirebaseSync.listenToRoom(this.roomId, (participantList) => {
-        participantList.forEach(p => {
-          if (p.peerId && p.peerId !== this.peerId && !this.peers.has(p.peerId)) {
-            this.callPeer(p.peerId, p);
-          }
-        });
-      });
+  setupPeerListeners() {
+    if (!this.peer) return;
+
+    // Handle Incoming Calls (Media Streams)
+    this.peer.on('call', (call) => {
+      console.log(`[WebRTC] Incoming call from peer: ${call.peer}`);
+      call.answer(this.localCamStream);
+      this.handlePeerCall(call);
+
+      // Connect reciprocal data connection if not present
+      if (!this.peers.has(call.peer) || !this.peers.get(call.peer).dataConn) {
+        const conn = this.peer.connect(call.peer);
+        this.handleDataConnection(conn);
+      }
+    });
+
+    // Handle Incoming Data Connections
+    this.peer.on('connection', (conn) => {
+      console.log(`[WebRTC] Incoming data connection from: ${conn.peer}`);
+      this.handleDataConnection(conn);
+    });
+  }
+
+  connectToRoomMesh() {
+    for (let s = 0; s < this.maxRoomCapacity; s++) {
+      if (s === this.mySlot) continue;
+      const targetPeerId = `li_${this.cleanRoom}_${s}`;
+      if (!this.peers.has(targetPeerId)) {
+        this.callPeer(targetPeerId);
+      }
     }
+  }
+
+  startMeshProbeLoop() {
+    if (this.meshProbeInterval) clearInterval(this.meshProbeInterval);
+    this.meshProbeInterval = setInterval(() => {
+      if (!this.peer || this.peer.destroyed) return;
+      for (let s = 0; s < this.maxRoomCapacity; s++) {
+        if (s === this.mySlot) continue;
+        const targetPeerId = `li_${this.cleanRoom}_${s}`;
+        if (!this.peers.has(targetPeerId)) {
+          this.callPeer(targetPeerId);
+        }
+      }
+    }, 4500);
   }
 
   // Call a peer with our local camera stream & establish data connection
   callPeer(remotePeerId, meta = {}) {
-    if (!this.peer || this.peers.has(remotePeerId)) return;
+    if (!this.peer || this.peer.destroyed || this.peers.has(remotePeerId)) return;
 
     try {
       const call = this.peer.call(remotePeerId, this.localCamStream, {
         metadata: {
           displayName: (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Student',
           subject: (window.Leaderboard && window.Leaderboard.currentUser.subjectGoal) || 'Focus',
-          isDualFeed: this.isDualFeedActive
+          isDualFeed: this.isDualFeedActive,
+          passcode: this.passcode,
+          slot: this.mySlot
         }
       });
-      this.handlePeerCall(call, meta);
+      if (call) {
+        this.handlePeerCall(call, meta);
+      }
 
       const conn = this.peer.connect(remotePeerId);
-      this.handleDataConnection(conn);
+      if (conn) {
+        this.handleDataConnection(conn);
+      }
     } catch (e) {
       console.warn('[WebRTC] Error calling peer:', e);
     }
@@ -225,14 +343,16 @@ class WebRTCRoomManager {
 
     conn.on('open', () => {
       console.log(`[WebRTC] Data channel established with ${remotePeerId}`);
-      // Send initial state handshake
+      // Send initial state handshake with passcode
       conn.send({
         type: 'HANDSHAKE',
         displayName: (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Student',
         subject: (window.Leaderboard && window.Leaderboard.currentUser.subjectGoal) || 'Focus',
         points: (window.Leaderboard && window.Leaderboard.currentUser.totalPoints) || 0,
         status: 'LOCKED_IN',
-        isHandRaised: this.isHandRaised
+        isHandRaised: this.isHandRaised,
+        passcode: this.passcode,
+        slot: this.mySlot
       });
     });
 
@@ -257,6 +377,11 @@ class WebRTCRoomManager {
         peerObj.dataConn.send(payload);
       }
     });
+
+    if (window.FirebaseSync) {
+      window.FirebaseSync.broadcastEvent(this.roomId, payload);
+    }
+  }
 
     if (window.FirebaseSync) {
       window.FirebaseSync.broadcastEvent(this.roomId, payload);
@@ -581,6 +706,99 @@ class WebRTCRoomManager {
       const total = 1 + this.peers.size;
       countBadge.textContent = `${total}/${this.maxRoomCapacity} Online`;
     }
+  }
+
+  leaveStudyRoom() {
+    console.log('[WebRTC] Leaving study room...');
+
+    // Stop local camera and screen share tracks
+    if (this.localCamStream) {
+      try {
+        this.localCamStream.getTracks().forEach(t => t.stop());
+      } catch (e) {}
+      this.localCamStream = null;
+    }
+    if (this.localScreenStream) {
+      try {
+        this.localScreenStream.getTracks().forEach(t => t.stop());
+      } catch (e) {}
+      this.localScreenStream = null;
+    }
+
+    // Clear video elements
+    const localCamVideo = document.getElementById('local-cam-video');
+    if (localCamVideo) localCamVideo.srcObject = null;
+    const localScreenVideo = document.getElementById('local-screen-video');
+    if (localScreenVideo) localScreenVideo.srcObject = null;
+
+    // Clear mesh probe loop
+    if (this.meshProbeInterval) {
+      clearInterval(this.meshProbeInterval);
+      this.meshProbeInterval = null;
+    }
+
+    // Post broadcast that we are leaving
+    this.postBroadcast({
+      type: 'PEER_LEFT',
+      peerId: this.peerId,
+      slot: this.mySlot
+    });
+
+    // Close all peer calls and connections
+    this.peers.forEach((p, remoteId) => {
+      try { p.call?.close(); } catch(e){}
+      try { p.dataConn?.close(); } catch(e){}
+      const tile = document.getElementById(`tile-${remoteId}`);
+      if (tile) tile.remove();
+    });
+    this.peers.clear();
+
+    // Destroy Peer instance so slot is immediately released
+    if (this.peer) {
+      try {
+        this.peer.destroy();
+      } catch (e) {}
+      this.peer = null;
+    }
+
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.close();
+      } catch (e) {}
+      this.broadcastChannel = null;
+    }
+
+    // Stop AI Trigger Engine
+    if (window.TriggerEngine) {
+      window.TriggerEngine.stopMonitoring();
+    }
+
+    // Pause timer
+    if (window.StudyTimer) {
+      window.StudyTimer.pauseTimer();
+    }
+
+    // Reset Header Badges
+    const roomBadge = document.getElementById('room-id-badge');
+    if (roomBadge) {
+      roomBadge.innerHTML = 'Lobby';
+      roomBadge.style.color = '';
+      roomBadge.style.borderColor = '';
+    }
+    const countBadge = document.getElementById('room-count-badge');
+    if (countBadge) {
+      countBadge.textContent = '1/8 Online';
+    }
+
+    // Hide Leave buttons
+    const leaveBtnHeader = document.getElementById('btn-leave-room-header');
+    if (leaveBtnHeader) leaveBtnHeader.style.display = 'none';
+
+    // Switch view back to Lobby
+    const studyView = document.getElementById('study-room-view');
+    const lobbyView = document.getElementById('lobby-view');
+    if (studyView) studyView.classList.add('hidden');
+    if (lobbyView) lobbyView.classList.remove('hidden');
   }
 
   getPeerCount() {
