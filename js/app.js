@@ -434,9 +434,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const adminContentView = document.getElementById('admin-content-view');
   const adminPinInput = document.getElementById('admin-pin-input');
   const adminUnlockBtn = document.getElementById('admin-unlock-btn');
-  const displaySavedPin = document.getElementById('display-saved-pin');
   const adminPinFeedback = document.getElementById('admin-pin-feedback');
-  const instantUnlockBtn = document.getElementById('btn-instant-unlock');
 
   function unlockAdminStudioUI() {
     if (window.Soundboard) {
@@ -453,16 +451,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function updateSavedPinDisplay() {
-    if (displaySavedPin) {
-      displaySavedPin.textContent = window.Soundboard?.adminPin || localStorage.getItem('lockedin_admin_pin') || '2027';
-    }
-  }
-
   if (openAdminBtn && adminModal) {
     openAdminBtn.addEventListener('click', () => {
       adminModal.classList.remove('hidden');
-      updateSavedPinDisplay();
       if (window.Soundboard && window.Soundboard.isAdminAuthenticated) {
         if (adminAuthView) adminAuthView.classList.add('hidden');
         if (adminContentView) adminContentView.classList.remove('hidden');
@@ -479,12 +470,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (instantUnlockBtn) {
-    instantUnlockBtn.addEventListener('click', () => {
-      unlockAdminStudioUI();
-    });
-  }
-
   if (closeAdminBtn && adminModal) {
     closeAdminBtn.addEventListener('click', () => {
       adminModal.classList.add('hidden');
@@ -494,12 +479,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (adminUnlockBtn) {
     adminUnlockBtn.addEventListener('click', () => {
       const pin = (adminPinInput.value || '').trim();
-      if (!window.Soundboard || window.Soundboard.verifyAdminPin(pin) || !pin) {
+      if (window.Soundboard && window.Soundboard.verifyAdminPin(pin)) {
         unlockAdminStudioUI();
       } else {
         if (adminPinFeedback) {
-          const curPin = window.Soundboard?.adminPin || '2027';
-          adminPinFeedback.textContent = `PIN did not match saved PIN (${curPin}). Click "Direct Unlock" or enter 2027.`;
+          adminPinFeedback.textContent = 'Incorrect PIN. Enter your password or fallback 2027.';
         }
       }
     });
@@ -526,11 +510,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const forgotPinBtn = document.getElementById('btn-forgot-pin');
   if (forgotPinBtn) {
     forgotPinBtn.addEventListener('click', () => {
-      if (window.Soundboard) {
-        window.Soundboard.resetAdminPinToDefault();
+      if (confirm('Reset Admin PIN to default (2027)? All your sound slots and audio files will remain safe.')) {
+        if (window.Soundboard) {
+          window.Soundboard.resetAdminPinToDefault();
+        }
+        unlockAdminStudioUI();
       }
-      updateSavedPinDisplay();
-      unlockAdminStudioUI();
     });
   }
 

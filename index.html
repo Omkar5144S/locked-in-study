@@ -27,7 +27,7 @@
       document.documentElement.style.colorScheme = (t === 'vibrant') ? 'light' : 'dark';
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=2.2">
+  <link rel="stylesheet" href="styles.css?v=2.3">
   
   <!-- PeerJS WebRTC Mesh -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -357,12 +357,9 @@
         <!-- Admin PIN Authentication -->
         <div id="admin-auth-view" class="admin-auth-box">
           <h3>Admin Studio Access</h3>
-          <p>Protected studio for custom meme sound triggers and cloud configuration. Your custom uploaded sounds are 100% safe.</p>
+          <p>Protected studio for custom meme sound triggers and cloud configuration. Enter your private PIN to manage triggers.</p>
           
-          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:12px; margin-bottom:14px;">
-            <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px;">
-              Current Device PIN: <strong id="display-saved-pin" style="color:var(--apple-blue); font-family:monospace; font-size:1rem;">2027</strong>
-            </div>
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:16px; margin-bottom:14px;">
             <div style="display:flex; gap:8px; justify-content:center; align-items:center;">
               <div style="position:relative; width:180px;">
                 <input type="password" id="admin-pin-input" class="form-input" style="width:100%; text-align:center; padding-right:34px;" placeholder="Enter PIN">
@@ -373,12 +370,9 @@
             <div id="admin-pin-feedback" style="font-size:0.8rem; margin-top:8px; min-height:1.2rem; color:var(--apple-red);"></div>
           </div>
 
-          <div style="display:flex; flex-direction:column; gap:8px;">
-            <button type="button" id="btn-instant-unlock" class="btn-timer" style="background:var(--apple-blue); color:#fff; width:100%; padding:10px; font-weight:600; border-radius:10px; cursor:pointer;">
-              ⚡ Direct Unlock (No PIN Needed)
-            </button>
+          <div>
             <button type="button" id="btn-forgot-pin" style="background:none; border:none; color:var(--apple-blue); font-size:0.78rem; text-decoration:underline; cursor:pointer;">
-              Emergency Reset PIN to 2027
+              Forgot PIN? Emergency Reset to 2027
             </button>
           </div>
         </div>
@@ -478,13 +472,13 @@
   </div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=2.2"></script>
-  <script src="js/noise-generator.js?v=2.2"></script>
-  <script src="js/firebase-config.js?v=2.2"></script>
-  <script src="js/leaderboard.js?v=2.2"></script>
-  <script src="js/timer.js?v=2.2"></script>
-  <script src="js/webrtc-room.js?v=2.2"></script>
-  <script src="js/trigger-engine.js?v=2.2"></script>
-  <script src="js/app.js?v=2.2"></script>
+  <script src="js/soundboard-admin.js?v=2.3"></script>
+  <script src="js/noise-generator.js?v=2.3"></script>
+  <script src="js/firebase-config.js?v=2.3"></script>
+  <script src="js/leaderboard.js?v=2.3"></script>
+  <script src="js/timer.js?v=2.3"></script>
+  <script src="js/webrtc-room.js?v=2.3"></script>
+  <script src="js/trigger-engine.js?v=2.3"></script>
+  <script src="js/app.js?v=2.3"></script>
 </body>
 </html>

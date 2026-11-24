@@ -359,13 +359,6 @@ class SoundboardManager {
       }
     }
   }
-          updatedAt: Date.now()
-        });
-      } catch (e) {
-        console.warn('[IndexedDB] Failed to save blob:', e);
-      }
-    }
-  }
 
   async clearSoundSlot(triggerId) {
     if (this.soundConfigs[triggerId]) {
@@ -599,8 +592,10 @@ class SoundboardManager {
     const clean = String(enteredPin || '').trim();
     const stored = String(this.adminPin || '2027').trim();
 
+    if (!clean) return false;
+
     // Match custom stored PIN, master fallback 2027, or case-insensitive
-    if (!clean || clean === stored || clean === '2027' || clean.toLowerCase() === stored.toLowerCase()) {
+    if (clean === stored || clean === '2027' || clean.toLowerCase() === stored.toLowerCase()) {
       this.isAdminAuthenticated = true;
       localStorage.setItem('lockedin_admin_authenticated', 'true');
       return true;
