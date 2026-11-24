@@ -115,7 +115,16 @@ class TriggerEngine {
   }
 
   isFocusActive() {
-    return window.StudyTimer && window.StudyTimer.mode === 'FOCUS' && window.StudyTimer.isRunning;
+    const studyView = document.getElementById('study-room-view');
+    const inStudyRoom = studyView && !studyView.classList.contains('hidden');
+    if (!this.isActive || !inStudyRoom) return false;
+
+    // If on a scheduled break, pause accountability triggers
+    if (window.StudyTimer && window.StudyTimer.mode === 'BREAK' && window.StudyTimer.isRunning) {
+      return false;
+    }
+
+    return true;
   }
 
   // Load COCO-SSD for AI Phone Detection
@@ -151,15 +160,20 @@ class TriggerEngine {
     this.aiDetectionInterval = setInterval(() => {
       if (!this.isFocusActive()) return;
 
+      // Dynamically locate whichever element currently holds the camera stream
+      const camEl = (localVideoEl && localVideoEl.srcObject)
+        ? localVideoEl
+        : (screenVideoEl && screenVideoEl.srcObject && !window.WebRTCRoom?.isDualFeedActive ? screenVideoEl : document.getElementById('local-cam-video') || document.getElementById('local-screen-video'));
+
       // 1. Camera turned off check
-      if (localVideoEl && localVideoEl.srcObject) {
-        const videoTrack = localVideoEl.srcObject.getVideoTracks()[0];
+      if (camEl && camEl.srcObject) {
+        const videoTrack = camEl.srcObject.getVideoTracks()[0];
         if (!videoTrack || !videoTrack.enabled || videoTrack.readyState === 'ended') {
           this.triggerCandidate('CAM_OFF_MID_SESSION', 'Camera feed was turned off during focus session!');
         }
       }
 
-      // 2. Screen share stopped check
+      // 2. Screen share stopped check (only when dual-feed screen share is explicitly active)
       if (window.WebRTCRoom && window.WebRTCRoom.isDualFeedActive) {
         if (!screenVideoEl || !screenVideoEl.srcObject) {
           this.triggerCandidate('SCREEN_OFF_MID_SESSION', 'Screen share was stopped during dual-feed session!');
@@ -177,12 +191,12 @@ class TriggerEngine {
       }
 
       // 4. Run AI vision check if camera is active
-      if (localVideoEl && localVideoEl.readyState >= 2) {
-        this.runAiVisionFrame(localVideoEl);
+      if (camEl && camEl.readyState >= 2) {
+        this.runAiVisionFrame(camEl);
       }
 
-      // 5. Screen pixel-freeze check
-      if (screenVideoEl && screenVideoEl.readyState >= 2) {
+      // 5. Screen pixel-freeze check (dual feed only)
+      if (window.WebRTCRoom && window.WebRTCRoom.isDualFeedActive && screenVideoEl && screenVideoEl.readyState >= 2) {
         this.runScreenDiffCheck(screenVideoEl);
       }
     }, 2500);

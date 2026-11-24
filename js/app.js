@@ -317,14 +317,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // Join WebRTC room
     await window.WebRTCRoom.joinStudyRoom(roomId, isPrivate, passcode);
 
-    // Start Trigger Engine monitoring
+    // Start Trigger Engine monitoring with active camera element
     const localCamVideo = document.getElementById('local-cam-video');
     const localScreenVideo = document.getElementById('local-screen-video');
+    const activeCam = (window.WebRTCRoom && window.WebRTCRoom.isDualFeedActive) ? localCamVideo : localScreenVideo;
+
     window.TriggerEngine.startMonitoring({
-      localVideoEl: localCamVideo,
+      localVideoEl: activeCam,
       screenVideoEl: localScreenVideo,
       localAudioStream: window.WebRTCRoom.localCamStream
     });
+
+    // Ensure audio context is ready for meme triggers
+    if (window.Soundboard) {
+      window.Soundboard.ensureAudioResumed();
+    }
 
     // Update Local Tile HUD
     document.getElementById('local-user-name').textContent = displayName;
@@ -338,8 +345,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const leaveBtnHeader = document.getElementById('btn-leave-room-header');
     if (leaveBtnHeader) leaveBtnHeader.style.display = 'inline-flex';
 
-    // Initialize Study Timer
+    // Initialize & auto-start Study Timer so focus triggers are live immediately
     window.StudyTimer.resetTimer();
+    window.StudyTimer.startTimer();
   }
 
   // Leave Room Handlers (Header & Dock)
