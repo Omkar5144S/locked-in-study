@@ -491,6 +491,10 @@ class WebRTCRoomManager {
         this.applyRemoteShame(data);
         break;
 
+      case 'SHAME_CLEARED':
+        this.clearRemoteShame(data.userId);
+        break;
+
       case 'PEER_CALLOUT_VOTE':
         if (window.TriggerEngine) {
           window.TriggerEngine.recordPeerCallout(data.targetUserId, data.triggerId, data.triggerName, data.voterId);
@@ -708,6 +712,13 @@ class WebRTCRoomManager {
         timerDisplay.classList.add('timer-struck-red-x');
         setTimeout(() => timerDisplay.classList.remove('timer-struck-red-x'), 5000);
       }
+      // Show shame stamp badge on remote peer tile
+      const existingBadge = tile.querySelector('.shame-stamp-badge');
+      if (existingBadge) existingBadge.remove();
+      const badge = document.createElement('div');
+      badge.className = 'shame-stamp-badge slam-animation';
+      badge.innerHTML = `<span>🚨 SHAMED</span><small>${this.escapeHtml(event.triggerName)}</small>`;
+      tile.appendChild(badge);
     }
 
     if (window.Soundboard) {
@@ -715,6 +726,23 @@ class WebRTCRoomManager {
         window.Soundboard.playAudioFromUrl(event.audioUrl, event.triggerId);
       } else {
         window.Soundboard.playTrigger(event.triggerId);
+      }
+    }
+  }
+
+  clearRemoteShame(userId) {
+    const tile = document.getElementById(`tile-${userId}`);
+    if (tile) {
+      const statusPill = tile.querySelector('.status-pill');
+      if (statusPill) {
+        statusPill.textContent = 'LOCKED IN';
+        statusPill.className = 'status-pill status-locked';
+      }
+      const existingBadge = tile.querySelector('.shame-stamp-badge');
+      if (existingBadge) {
+        existingBadge.style.transition = 'opacity 0.6s ease';
+        existingBadge.style.opacity = '0';
+        setTimeout(() => existingBadge.remove(), 600);
       }
     }
   }

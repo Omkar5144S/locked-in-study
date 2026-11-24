@@ -47,6 +47,10 @@ class TriggerEngine {
     // Peer votes tracker: { targetUserId: { triggerId: Set([voterUid]) } }
     this.peerVotes = {};
 
+    // Dynamic Shame Redemption Tracking
+    this.isCurrentlyShamed = false;
+    this.shameCleanSeconds = 0;
+
     this.initEventListeners();
   }
 
@@ -425,8 +429,60 @@ class TriggerEngine {
 
   cancelGraceByFalseAlarm() {
     this.clearGrace();
-    this.updateLocalTileStatus('LOCKED IN', 'status-locked');
+    this.clearLocalShame('False alarm confirmed');
     console.log('[TriggerEngine] Grace period cancelled by user (False Alarm marked).');
+  }
+
+  // Increment clean focus seconds and auto-redeem shame status
+  recordCleanSecond() {
+    if (!this.isCurrentlyShamed) return;
+    this.shameCleanSeconds++;
+
+    // Update remaining countdown on the badge if present
+    const localTile = document.getElementById('local-user-tile');
+    if (localTile) {
+      const hint = localTile.querySelector('.shame-stamp-badge div');
+      if (hint) {
+        const remaining = Math.max(0, 60 - this.shameCleanSeconds);
+        hint.textContent = `Focus cleanly for ${remaining}s to redeem`;
+      }
+    }
+
+    if (this.shameCleanSeconds >= 60) {
+      this.clearLocalShame('60s clean focus completed');
+    }
+  }
+
+  // Clear shame state and restore Locked In status
+  clearLocalShame(reason = 'Clean focus sustained') {
+    if (!this.isCurrentlyShamed) return;
+    this.isCurrentlyShamed = false;
+    this.shameCleanSeconds = 0;
+
+    const localTile = document.getElementById('local-user-tile');
+    if (localTile) {
+      const badge = localTile.querySelector('.shame-stamp-badge');
+      if (badge) {
+        badge.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+        badge.style.opacity = '0';
+        badge.style.transform = 'translate(-50%, -50%) scale(0.7)';
+        setTimeout(() => badge.remove(), 600);
+      }
+    }
+
+    this.updateLocalTileStatus('LOCKED IN', 'status-locked');
+    this.showShameToast(`✨ REDEEMED! Shame stamp cleared (${reason}) — locked back in!`);
+
+    if (window.Soundboard) {
+      window.Soundboard.playSynthesizedTone('gentle_chime', 0.5);
+    }
+
+    if (window.WebRTCRoom) {
+      window.WebRTCRoom.broadcastData({
+        type: 'SHAME_CLEARED',
+        userId: (window.Leaderboard && window.Leaderboard.currentUser.uid) || window.WebRTCRoom.peerId
+      });
+    }
   }
 
   clearGrace() {
@@ -457,6 +513,8 @@ class TriggerEngine {
     }
 
     // 3. Slap Shame Badge on video tile
+    this.isCurrentlyShamed = true;
+    this.shameCleanSeconds = 0;
     this.updateLocalTileStatus(`SHAMED: ${reasonText}`, 'status-shamed');
     const localTile = document.getElementById('local-user-tile');
     if (localTile) {
@@ -465,7 +523,7 @@ class TriggerEngine {
 
       const shameBadge = document.createElement('div');
       shameBadge.className = 'shame-stamp-badge slam-animation';
-      shameBadge.innerHTML = `<span>🚨 SHAMED</span><small>${this.escapeHtml(reasonText)}</small>`;
+      shameBadge.innerHTML = `<span>🚨 SHAMED</span><small>${this.escapeHtml(reasonText)}</small><div style="font-size:0.68rem; margin-top:4px; opacity:0.85;">Hold 60s clean focus to redeem</div>`;
       localTile.appendChild(shameBadge);
     }
 

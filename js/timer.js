@@ -69,9 +69,16 @@ class StudyTimerManager {
       this.renderDisplay();
 
       // Award +2 points for every clean focused minute
-      if (this.mode === 'FOCUS' && (this.secondsLeft % 60 === 0)) {
-        if (window.Leaderboard) {
-          window.Leaderboard.awardCleanStudyMinute();
+      if (this.mode === 'FOCUS') {
+        // Track continuous clean focus for shame redemption
+        if (window.TriggerEngine && window.TriggerEngine.recordCleanSecond) {
+          window.TriggerEngine.recordCleanSecond();
+        }
+
+        if (this.secondsLeft % 60 === 0) {
+          if (window.Leaderboard) {
+            window.Leaderboard.awardCleanStudyMinute();
+          }
         }
       }
 
@@ -102,6 +109,11 @@ class StudyTimerManager {
           window.Soundboard.playTrigger('FOCUS_BLOCK_VICTORY', true);
         }
         this.showToast('🏆 FOCUS BLOCK VICTORY! Completed with ZERO distractions (+25 bonus points!)');
+      }
+
+      // Auto-clear any lingering shame stamp on focus block completion
+      if (window.TriggerEngine && window.TriggerEngine.clearLocalShame) {
+        window.TriggerEngine.clearLocalShame('Focus block completed');
       }
 
       // Transition to Break Mode
