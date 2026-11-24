@@ -74,22 +74,37 @@ document.addEventListener('DOMContentLoaded', () => {
     if (acceptInviteBtn) {
       acceptInviteBtn.addEventListener('click', () => {
         const cleanName = roomParam.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-        const targetRoomId = isPrivate ? (cleanName.startsWith('private-') ? cleanName : `private-${cleanName}`) : roomParam;
-        startStudySession(targetRoomId, isPrivate, keyParam || null);
+        startStudySession(cleanName, isPrivate, keyParam || null);
       });
     }
   }
 
-  // 2. Among Us Style Public Room Browser
+  // 2. Real Active Public Rooms (No decoy rooms!)
   let currentFilter = 'all';
   const defaultPublicRooms = [
-    { id: 'focus-lobby-1', name: "Red's Reactor", host: "RedScholar", category: 'stem', tag: '🔬 Organic Chem & Physics', timer: '25m', color: 'color-red', online: 5 },
-    { id: 'focus-lobby-2', name: "Cyan's Cyber Lab", host: "CyanDev", category: 'code', tag: '💻 Rust & LeetCode Hard', timer: '50m', color: 'color-cyan', online: 3 },
-    { id: 'focus-lobby-3', name: "Green's Med Bay", host: "DrGreen", category: 'med', tag: '🩺 Anatomy & MCAT Prep', timer: '50m', color: 'color-green', online: 4 },
-    { id: 'focus-lobby-4', name: "Purple's Library", host: "SilentPurple", category: 'silent', tag: '🤫 Absolute Silent Grind', timer: '25m', color: 'color-purple', online: 2 },
-    { id: 'focus-lobby-5', name: "Orange's Shield Room", host: "OrangeLaw", category: 'stem', tag: '📚 Calculus & Linear Alg', timer: '90m', color: 'color-orange', online: 6 },
-    { id: 'focus-lobby-6', name: "Yellow's Navigation", host: "StarScholar", category: 'code', tag: '💻 Full-Stack Architecture', timer: '25m', color: 'color-yellow', online: 1 }
+    {
+      id: 'main-study-hall',
+      name: '⚡ Main Study Hall (24/7 Community)',
+      host: 'Community',
+      category: 'all',
+      tag: '🌐 Open Study Hall',
+      timer: '25m',
+      color: 'color-green',
+      online: 1
+    }
   ];
+
+  // Restore user-hosted rooms from local storage
+  try {
+    const saved = JSON.parse(localStorage.getItem('lockedin_active_rooms') || '[]');
+    if (Array.isArray(saved)) {
+      saved.forEach(r => {
+        if (!defaultPublicRooms.find(existing => existing.id === r.id)) {
+          defaultPublicRooms.push(r);
+        }
+      });
+    }
+  } catch (e) {}
 
   function renderPublicRooms() {
     const listEl = document.getElementById('public-room-list');
@@ -98,19 +113,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const filtered = defaultPublicRooms.filter(r => currentFilter === 'all' || r.category === currentFilter);
 
+    if (filtered.length === 0) {
+      listEl.innerHTML = `
+        <div style="padding: 24px 16px; text-align: center; color: var(--text-secondary);">
+          <div style="font-size: 1.8rem; margin-bottom: 8px;">📭</div>
+          <p style="font-size: 0.9rem; margin-bottom: 8px; font-weight: 500;">No custom rooms in this category right now.</p>
+          <p style="font-size: 0.8rem; color: var(--text-tertiary);">Launch your own in the <strong>HOST</strong> tab or click <strong>Quick Matchmake</strong> to enter the Main Study Hall!</p>
+        </div>
+      `;
+      return;
+    }
+
     filtered.forEach(room => {
       const card = document.createElement('div');
       card.className = 'au-room-card';
-
-      // Build 8 Among Us capacity dots
-      let dotsHtml = '';
-      for (let i = 0; i < 8; i++) {
-        if (i < room.online) {
-          dotsHtml += '<span class="dot-filled">●</span>';
-        } else {
-          dotsHtml += '<span class="dot-empty">○</span>';
-        }
-      }
 
       card.innerHTML = `
         <div class="au-room-left">
@@ -124,16 +140,12 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
         <div class="au-room-right">
-          <div class="au-crew-dots" title="${room.online}/8 crew members online">
-            ${dotsHtml}
-            <span class="au-capacity-text">${room.online}/8</span>
-          </div>
-          <button type="button" class="au-join-btn" ${room.online >= 8 ? 'disabled' : ''}>${room.online >= 8 ? 'FULL' : 'JOIN'}</button>
+          <button type="button" class="au-join-btn">JOIN</button>
         </div>
       `;
 
       const joinBtn = card.querySelector('.au-join-btn');
-      if (joinBtn && room.online < 8) {
+      if (joinBtn) {
         joinBtn.addEventListener('click', () => {
           startStudySession(room.id, false, null);
         });
@@ -157,43 +169,40 @@ document.addEventListener('DOMContentLoaded', () => {
   const refreshRoomsBtn = document.getElementById('btn-refresh-rooms');
   if (refreshRoomsBtn) {
     refreshRoomsBtn.addEventListener('click', () => {
-      defaultPublicRooms.forEach(r => {
-        r.online = Math.max(1, Math.min(7, r.online + (Math.random() > 0.5 ? 1 : -1)));
-      });
       renderPublicRooms();
     });
   }
 
-  // Quick Join Public Lobby Button
+  // Quick Join Public Lobby Button -> Guaranteed to put everyone in Main Study Hall!
   const quickJoinPublicBtn = document.getElementById('btn-quick-join-public');
   if (quickJoinPublicBtn) {
     quickJoinPublicBtn.addEventListener('click', () => {
-      const targetRoom = defaultPublicRooms.find(r => r.online < 8) || { id: 'focus-lobby-1' };
-      startStudySession(targetRoom.id, false, null);
+      startStudySession('main-study-hall', false, null);
     });
   }
 
-  // Enter Private Room Button & Arrow Button
+  // Enter Room by Code Button & Arrow Button
   const joinPrivateBtn = document.getElementById('btn-join-private');
   const submitCodeArrow = document.getElementById('btn-submit-code-arrow');
 
   function handlePrivateJoin() {
-    const roomCode = (privateRoomInput.value || '').trim();
+    const rawCode = (privateRoomInput.value || '').trim();
     const passcode = (privatePasscodeInput.value || '').trim();
 
-    if (!roomCode) {
-      alert('Please enter a Private Room Code (e.g. "SKELD42").');
+    if (!rawCode) {
+      alert('Please enter a Room Code (e.g. "math" or "chemistry").');
       privateRoomInput.focus();
       return;
     }
 
-    startStudySession(`private-${roomCode.toLowerCase().replace(/[^a-z0-9_-]/g, '')}`, true, passcode);
+    const cleanCode = rawCode.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24);
+    startStudySession(cleanCode, !!passcode, passcode || null);
   }
 
   if (joinPrivateBtn) joinPrivateBtn.addEventListener('click', handlePrivateJoin);
   if (submitCodeArrow) submitCodeArrow.addEventListener('click', handlePrivateJoin);
 
-  // Host / Create Game Button
+  // Host / Create Room Button
   const hostTimerBtns = document.querySelectorAll('.host-timer-btn');
   let hostFocus = 25;
   let hostBreak = 5;
@@ -212,7 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
     createHostBtn.addEventListener('click', () => {
       const titleInput = document.getElementById('input-host-room-title');
       const subjectSelect = document.getElementById('select-host-subject');
-      const title = (titleInput && titleInput.value.trim()) || "Commander's Bridge";
+      const rawTitle = (titleInput && titleInput.value.trim()) || "Focus Lounge";
       const subject = subjectSelect ? subjectSelect.options[subjectSelect.selectedIndex].text : 'General Deep Work';
       const category = subjectSelect ? subjectSelect.value : 'stem';
 
@@ -221,31 +230,39 @@ document.addEventListener('DOMContentLoaded', () => {
         window.StudyTimer.setPreset(hostFocus, hostBreak);
       }
 
-      // Generate a clean room ID based on title
-      const cleanTitle = title.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 20) || 'focus-room';
-      const generatedId = `lobby-${cleanTitle}`;
+      // Generate a clean room ID based directly on title (easy to share!)
+      const cleanId = rawTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 20) || 'study-room';
 
       // Register this newly created lobby into the public room list
-      const existing = defaultPublicRooms.find(r => r.id === generatedId);
-      if (!existing) {
-        defaultPublicRooms.unshift({
-          id: generatedId,
-          name: title,
-          host: displayNameInput?.value || 'Host',
-          category: category,
-          tag: subject,
-          timer: `${hostFocus}m`,
-          color: 'color-orange',
-          online: 1
-        });
-        renderPublicRooms();
+      const roomEntry = {
+        id: cleanId,
+        name: rawTitle,
+        host: displayNameInput?.value || 'Host',
+        category: category,
+        tag: subject,
+        timer: `${hostFocus}m`,
+        color: 'color-orange',
+        online: 1
+      };
+
+      const existingIdx = defaultPublicRooms.findIndex(r => r.id === cleanId);
+      if (existingIdx >= 0) {
+        defaultPublicRooms[existingIdx] = roomEntry;
+      } else {
+        defaultPublicRooms.unshift(roomEntry);
       }
+
+      try {
+        localStorage.setItem('lockedin_active_rooms', JSON.stringify(defaultPublicRooms.filter(r => r.id !== 'main-study-hall')));
+      } catch (e) {}
+
+      renderPublicRooms();
 
       createHostBtn.disabled = true;
       const originalText = createHostBtn.textContent;
       createHostBtn.textContent = '⏳ Launching Lobby...';
 
-      startStudySession(generatedId, false, null).catch(err => {
+      startStudySession(cleanId, false, null).catch(err => {
         console.error('[App] Failed to launch host session:', err);
       }).finally(() => {
         createHostBtn.disabled = false;

@@ -27,7 +27,7 @@
       document.documentElement.style.colorScheme = (t === 'vibrant') ? 'light' : 'dark';
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=2.6">
+  <link rel="stylesheet" href="styles.css?v=2.7">
   
   <!-- PeerJS WebRTC Mesh -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -139,13 +139,13 @@
       </div>
 
       <div class="form-group">
-        <label>Study Lobby Terminal (Among Us Style)</label>
+        <label>Study Lobby Terminal</label>
         <div class="amongus-terminal-nav">
           <button type="button" class="au-tab-btn active" id="tab-btn-public">
             <span class="au-icon">🚀</span> PUBLIC
           </button>
           <button type="button" class="au-tab-btn" id="tab-btn-private">
-            <span class="au-icon">🔒</span> PRIVATE
+            <span class="au-icon">🔑</span> JOIN BY CODE
           </button>
           <button type="button" class="au-tab-btn" id="tab-btn-host">
             <span class="au-icon">🛠️</span> HOST
@@ -155,9 +155,11 @@
 
       <!-- 1. PUBLIC LOBBIES BROWSER -->
       <div id="section-public-room" class="au-section">
+        <button type="button" id="btn-quick-join-public" class="btn-primary-action au-action-btn" style="margin-bottom: 12px; background: linear-gradient(135deg, #10b981, #059669);">⚡ Enter Main Study Hall (24/7 Community)</button>
+
         <div class="au-browser-panel">
           <div class="au-filter-bar">
-            <span class="au-label">Filter:</span>
+            <span class="au-label">Active Rooms:</span>
             <div class="au-filter-chips">
               <button type="button" class="filter-chip active" data-filter="all">All</button>
               <button type="button" class="filter-chip" data-filter="stem">🔬 STEM</button>
@@ -165,41 +167,41 @@
               <button type="button" class="filter-chip" data-filter="med">🩺 Med</button>
               <button type="button" class="filter-chip" data-filter="silent">🤫 Silent</button>
             </div>
-            <button type="button" class="refresh-pill au-refresh-btn" id="btn-refresh-rooms">🔄</button>
+            <button type="button" class="refresh-pill au-refresh-btn" id="btn-refresh-rooms" title="Refresh room list">🔄</button>
           </div>
 
           <div class="au-room-list" id="public-room-list">
-            <!-- Dynamically populated with Among Us style room cards -->
+            <!-- Dynamically populated with active rooms -->
           </div>
         </div>
-        <button type="button" id="btn-quick-join-public" class="btn-primary-action au-action-btn">⚡ Quick Matchmake</button>
       </div>
 
-      <!-- 2. PRIVATE ROOM (ENTER CODE) -->
+      <!-- 2. JOIN BY CODE -->
       <div id="section-private-room" class="au-section hidden">
         <div class="au-private-panel">
           <div class="au-code-box">
-            <label for="input-private-room">ENTER ROOM CODE</label>
+            <label for="input-private-room">ENTER ROOM CODE / NAME</label>
             <div class="au-input-row">
-              <input type="text" id="input-private-room" class="form-input au-code-input" placeholder="ROOM CODE" maxlength="15">
+              <input type="text" id="input-private-room" class="form-input au-code-input" placeholder="e.g. math or bio" maxlength="24">
               <button type="button" id="btn-submit-code-arrow" class="au-arrow-btn" title="Enter">➔</button>
             </div>
           </div>
           <div class="au-passcode-box">
-            <label for="input-private-passcode">ROOM PASSCODE (IF PROTECTED)</label>
-            <input type="password" id="input-private-passcode" class="form-input" placeholder="Optional security PIN">
+            <label for="input-private-passcode">ROOM PASSCODE (OPTIONAL)</label>
+            <input type="password" id="input-private-passcode" class="form-input" placeholder="Optional security PIN if set by host">
           </div>
-          <p class="private-tip">🚀 Only students with this code can enter your study spaceship.</p>
+          <p class="private-tip">🚀 Tip: Type the exact room code or name shared by your friend to join them immediately.</p>
         </div>
-        <button type="button" id="btn-join-private" class="btn-primary-action btn-private-action au-action-btn">Enter Private Room</button>
+        <button type="button" id="btn-join-private" class="btn-primary-action btn-private-action au-action-btn">Join Room Now ➔</button>
       </div>
 
       <!-- 3. HOST A ROOM (CREATE GAME) -->
       <div id="section-host-room" class="au-section hidden">
         <div class="au-host-panel">
           <div class="form-group" style="margin-bottom:10px;">
-            <label for="input-host-room-title">LOBBY TITLE</label>
-            <input type="text" id="input-host-room-title" class="form-input" placeholder="e.g. Red's Focus Reactor">
+            <label for="input-host-room-title">LOBBY TITLE / ROOM CODE</label>
+            <input type="text" id="input-host-room-title" class="form-input" placeholder="e.g. math, bio, or focus-room">
+            <small style="color:var(--text-tertiary); font-size:0.75rem; display:block; margin-top:4px;">Friends can join by typing this exact room code in "JOIN BY CODE" or by clicking your invite link.</small>
           </div>
           <div class="form-group" style="margin-bottom:10px;">
             <label for="select-host-subject">SUBJECT / SECTOR</label>
@@ -493,13 +495,13 @@
   </div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=2.6"></script>
-  <script src="js/noise-generator.js?v=2.6"></script>
-  <script src="js/firebase-config.js?v=2.6"></script>
-  <script src="js/leaderboard.js?v=2.6"></script>
-  <script src="js/timer.js?v=2.6"></script>
-  <script src="js/webrtc-room.js?v=2.6"></script>
-  <script src="js/trigger-engine.js?v=2.6"></script>
-  <script src="js/app.js?v=2.6"></script>
+  <script src="js/soundboard-admin.js?v=2.7"></script>
+  <script src="js/noise-generator.js?v=2.7"></script>
+  <script src="js/firebase-config.js?v=2.7"></script>
+  <script src="js/leaderboard.js?v=2.7"></script>
+  <script src="js/timer.js?v=2.7"></script>
+  <script src="js/webrtc-room.js?v=2.7"></script>
+  <script src="js/trigger-engine.js?v=2.7"></script>
+  <script src="js/app.js?v=2.7"></script>
 </body>
 </html>

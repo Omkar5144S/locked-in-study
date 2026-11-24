@@ -59,14 +59,6 @@ class WebRTCRoomManager {
     // Mute mic by default during study session
     this.muteMic(true);
 
-    // Attach to Local Camera Video
-    const localCamVideo = document.getElementById('local-cam-video');
-    if (localCamVideo && this.localCamStream) {
-      localCamVideo.srcObject = this.localCamStream;
-      localCamVideo.muted = true;
-      localCamVideo.play().catch(e => console.log('[WebRTC] Local video play:', e));
-    }
-
     // 2. If Dual Feed requested on desktop, request Screen Share
     if (this.isDualFeedActive) {
       try {
@@ -75,12 +67,6 @@ class WebRTCRoomManager {
             video: { cursor: 'always' },
             audio: false
           });
-
-          const localScreenVideo = document.getElementById('local-screen-video');
-          if (localScreenVideo) {
-            localScreenVideo.srcObject = this.localScreenStream;
-            localScreenVideo.muted = true;
-          }
 
           this.localScreenStream.getVideoTracks()[0].onended = () => {
             if (window.TriggerEngine) {
@@ -94,6 +80,37 @@ class WebRTCRoomManager {
         console.warn('[WebRTC] Screen share was declined or cancelled. Running camera-only mode:', screenErr);
         this.isDualFeedActive = false;
       }
+    }
+
+    // Attach streams to DOM elements based on layout mode
+    const localCamVideo = document.getElementById('local-cam-video');
+    const localScreenVideo = document.getElementById('local-screen-video');
+    const pipWrapper = document.getElementById('local-pip-wrapper');
+    const pipSwapBtn = document.getElementById('btn-pip-swap');
+
+    if (this.isDualFeedActive && this.localScreenStream) {
+      // Dual Feed: Screen is main feed, Camera is in PiP overlay
+      if (localScreenVideo) {
+        localScreenVideo.srcObject = this.localScreenStream;
+        localScreenVideo.muted = true;
+        localScreenVideo.play().catch(e => console.log('[WebRTC] Screen play:', e));
+      }
+      if (localCamVideo && this.localCamStream) {
+        localCamVideo.srcObject = this.localCamStream;
+        localCamVideo.muted = true;
+        localCamVideo.play().catch(e => console.log('[WebRTC] Cam play:', e));
+      }
+      if (pipWrapper) pipWrapper.style.display = 'block';
+      if (pipSwapBtn) pipSwapBtn.style.display = 'inline-flex';
+    } else {
+      // Single Camera / Mobile Mode: Camera takes up the FULL tile!
+      if (localScreenVideo && this.localCamStream) {
+        localScreenVideo.srcObject = this.localCamStream;
+        localScreenVideo.muted = true;
+        localScreenVideo.play().catch(e => console.log('[WebRTC] Main cam play:', e));
+      }
+      if (pipWrapper) pipWrapper.style.display = 'none';
+      if (pipSwapBtn) pipSwapBtn.style.display = 'none';
     }
 
     this.updateTileLayout();
@@ -557,6 +574,16 @@ class WebRTCRoomManager {
     const videoEl = tile.querySelector('video');
     if (videoEl && videoEl.srcObject !== stream) {
       videoEl.srcObject = stream;
+      videoEl.playsInline = true;
+      videoEl.autoplay = true;
+      const playPromise = videoEl.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(err => {
+          console.warn('[WebRTC] Autoplay unmuted was blocked. Falling back to muted playback:', err);
+          videoEl.muted = true;
+          videoEl.play().catch(e => console.error('[WebRTC] Remote video playback failed:', e));
+        });
+      }
     }
 
     this.updateRoomParticipantCount();
@@ -729,7 +756,15 @@ class WebRTCRoomManager {
 
   // Picture in Picture Swap
   swapPiP() {
+    if (!this.isDualFeedActive) return;
     this.isCamSwapped = !this.isCamSwapped;
+    const localCamVideo = document.getElementById('local-cam-video');
+    const localScreenVideo = document.getElementById('local-screen-video');
+    if (localCamVideo && localScreenVideo) {
+      const temp = localScreenVideo.srcObject;
+      localScreenVideo.srcObject = localCamVideo.srcObject;
+      localCamVideo.srcObject = temp;
+    }
     const localTile = document.getElementById('local-user-tile');
     if (localTile) {
       localTile.classList.toggle('pip-swapped', this.isCamSwapped);
