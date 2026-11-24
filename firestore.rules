@@ -10,74 +10,153 @@ service cloud.firestore {
     // Collection: users/{userId}
     // Document ID: Firebase Auth UID
     // Fields:
-    //   - displayName: string (required, 1-50 chars) - Public username / callsign
+    //   - displayName: string (required, 1-50 chars) - Public username / handle
+    //   - callSign: string (optional, 1-50 chars) - Tactical callsign / handle
     //   - photoURL: string (optional, 0-500 chars) - Profile avatar URL
     //   - subjectGoal: string (optional, 0-100 chars) - Current focus / exam subject
-    //   - totalPoints: number (required, >= 0, <= 10000000) - Accountability score
-    //   - cleanStudyMinutes: number (required, >= 0, <= 1000000) - Verified focus time
-    //   - shameCount: number (required, >= 0, <= 100000) - Number of verified distractions
+    //   - isVerified: bool (optional) - Verification badge status
+    //   - totalPoints: number (optional, >= 0, <= 10000000) - Accountability score
+    //   - cleanStudyMinutes: number (optional, >= 0, <= 1000000) - Verified focus time
+    //   - shameCount: number (optional, >= 0, <= 100000) - Distraction incident count
     //   - topTrigger: string (optional, 0-100 chars) - Most frequent distraction trigger
-    //   - createdAt: timestamp (required, immutable) - Account creation timestamp
-    //   - updatedAt: timestamp (required) - Last profile sync timestamp
-    //   - isAnonymous: bool (required) - Whether using Anonymous Auth
+    //   - level: number (optional, >= 0, <= 10000) - User progression level
+    //   - xp: number (optional, >= 0, <= 100000000) - Experience points
+    //   - coins: number (optional, >= 0, <= 10000000) - Bounty / gamification coins
+    //   - dailyStreak: number (optional, >= 0, <= 10000) - Daily streak count
+    //   - lastStudyDate: string | timestamp | number (optional) - Date of last session
+    //   - unlockedBadges: list (optional, max 100 items) - Earned badge identifiers
+    //   - createdAt: timestamp | number (required, immutable) - Account creation timestamp
+    //   - updatedAt: timestamp | number (required) - Last profile sync timestamp
+    //   - isAnonymous: bool (optional) - Whether user is using Anonymous Auth
+    //   - uid: string (optional, 1-128 chars) - Auth UID mirror
+    //
+    // Subcollection: users/{userId}/private/{docId}
+    // Document ID: Private document ID (e.g. 'info')
+    // Fields:
+    //   - email: string (optional, 0-254 chars) - Private user email address
+    //   - emailVerified: bool (optional) - Auth email verification status
+    //   - lastLogin: timestamp | number (optional) - Last login timestamp
+    //   - createdAt: timestamp | number (optional)
+    //   - updatedAt: timestamp | number (optional)
+    //   - userId: string (optional, 0-128 chars)
+    //   - fcmToken: string (optional, 0-500 chars)
+    //   - preferences: map (optional)
     //
     // Collection: rooms/{roomId}
     // Document ID: Room ID (string)
     // Fields:
-    //   - name: string (required, 1-60 chars) - Study room title
-    //   - createdAt: timestamp (required, immutable) - Creation timestamp
-    //   - updatedAt: timestamp (required) - Last activity / timer sync timestamp
-    //   - hostId: string (required, 1-128 chars) - UID of the room creator / host
-    //   - participantCount: number (required, 0-8) - Current active participant count
-    //   - timerState: map (required) - Synchronized study timer
+    //   - roomId: string (optional, 1-128 chars)
+    //   - title: string (optional, 1-100 chars) - Room display title
+    //   - name: string (optional, 1-100 chars) - Room title / identifier
+    //   - sector: string (optional, 1-50 chars) - Focus area (e.g. ENGINEERING, MEDICINE)
+    //   - hostUid: string (optional, 1-128 chars) - Host user UID
+    //   - hostId: string (optional, 1-128 chars) - Host user UID (legacy mirror)
+    //   - createdAt: timestamp | number (required, immutable) - Creation timestamp
+    //   - lastPing: timestamp | number (optional) - Host heartbeat ping
+    //   - updatedAt: timestamp | number (required) - Last state / timer sync timestamp
+    //   - activeCount: number (optional, 0-100) - Currently active peers
+    //   - participantCount: number (optional, 0-100) - Total participant count
+    //   - timerState: map (optional) - Synchronized study timer state
     //       * mode: string (1-30 chars, e.g. POMODORO, BREAK)
     //       * duration: number (0-86400 seconds)
     //       * startedAt: timestamp | number | null (optional)
-    //       * isPaused: bool
+    //       * isPaused: bool (optional)
+    //       * remaining: number (optional, 0-86400)
+    //       * endsAt: timestamp | number | null (optional)
+    //   - isPrivate: bool (optional) - Whether room requires passcode
+    //   - passcode: string (optional, 0-50 chars) - Private room passcode
     //
     // Subcollection: rooms/{roomId}/participants/{participantId}
-    // Document ID: Participant UID (matches request.auth.uid)
+    // Document ID: Participant UID or Session ID
     // Fields:
-    //   - userId: string (required, immutable, matches request.auth.uid)
-    //   - displayName: string (required, 1-50 chars) - Display name in room
+    //   - userId: string (required, immutable) - Auth UID of participant
+    //   - displayName: string (optional, 1-50 chars) - Display name in room
+    //   - callSign: string (optional, 1-50 chars) - Tactical callsign
     //   - peerId: string (optional, 0-100 chars) - WebRTC peer connection ID
-    //   - joinedAt: timestamp (required, immutable) - Join timestamp
-    //   - lastSeen: timestamp (required) - Presence heartbeat
-    //   - status: string (required, enum: LOCKED_IN | GRACE | SHAMED | BREAK)
-    //   - isHandRaised: bool (required) - Assistance / discussion request flag
+    //   - cameraMode: string (optional, 0-50 chars) - Video state
+    //   - joinedAt: timestamp | number (required, immutable) - Join timestamp
+    //   - lastSeen: timestamp | number (required) - Heartbeat timestamp
+    //   - isVerified: bool (optional) - Verified status
+    //   - status: string (optional, 1-30 chars) - LOCKED_IN | GRACE | SHAMED | BREAK | FOCUSING
+    //   - isHandRaised: bool (optional) - Assistance request flag
     //   - shameReason: string (optional, 0-200 chars) - Distraction trigger reason
-    //   - timerRemaining: number (required, 0-86400 seconds)
+    //   - timerRemaining: number (optional, 0-86400 seconds)
+    //
+    // Subcollection: rooms/{roomId}/connections/{connectionId}
+    // Document ID: Deterministic Peer-Pair ID ({smallerId}_{largerId})
+    // Fields:
+    //   - callerId: string (required, 1-128 chars, immutable) - Initiating peer UID
+    //   - calleeId: string (required, 1-128 chars, immutable) - Target peer UID
+    //   - offer: map (optional) - SDP offer { type: string, sdp: string }
+    //   - answer: map (optional) - SDP answer { type: string, sdp: string }
+    //   - createdAt: timestamp | number (required, immutable)
+    //   - answeredAt: timestamp | number (optional)
+    //
+    // Subcollection: rooms/{roomId}/connections/{connectionId}/callerCandidates/{candidateId}
+    // Subcollection: rooms/{roomId}/connections/{connectionId}/calleeCandidates/{candidateId}
+    // Document ID: Auto-generated candidate ID
+    // Fields:
+    //   - candidate: map | string (required) - WebRTC ICE candidate payload
+    //   - createdAt: timestamp | number (required)
     //
     // Subcollection: rooms/{roomId}/events/{eventId}
     // Document ID: Auto-generated event ID
     // Fields:
-    //   - type: string (required, 1-50 chars, e.g. TRIGGER_ALERT, PEER_CALLOUT, HAND_RAISE)
+    //   - type: string (required, 1-50 chars)
     //   - senderId: string (required, matches request.auth.uid)
     //   - senderName: string (required, 1-50 chars)
     //   - message: string (optional, 0-500 chars)
-    //   - payload: map (optional) - Additional event context
+    //   - payload: map (optional)
     //   - targetUserId: string (optional, 0-128 chars)
-    //   - timestamp: timestamp (required)
+    //   - timestamp: timestamp | number (required)
+    //
+    // Collection: doubts/{doubtId}
+    // Document ID: Doubt ID
+    // Fields:
+    //   - doubtId: string (optional, 1-128 chars)
+    //   - authorUid: string (required, immutable, matches request.auth.uid on create)
+    //   - authorCallSign: string (optional, 1-50 chars)
+    //   - subject: string (required, 1-100 chars) - Academic subject / topic
+    //   - questionText: string (required, 1-5000 chars) - Question body
+    //   - imageUrl: string (optional, 0-500 chars) - Attached image URL
+    //   - bountyCoins: number (optional, 0-100000) - Coins rewarded for answer
+    //   - status: string (required, enum: OPEN | RESOLVED | CLOSED | ANSWERED)
+    //   - createdAt: timestamp | number (required, immutable)
+    //   - updatedAt: timestamp | number (optional)
+    //   - acceptedAnswerId: string (optional, 0-128 chars)
+    //   - solverUid: string (optional, 0-128 chars)
+    //
+    // Subcollection: doubts/{doubtId}/answers/{answerId}
+    // Document ID: Answer ID
+    // Fields:
+    //   - answerId: string (optional, 1-128 chars)
+    //   - doubtId: string (optional, 1-128 chars)
+    //   - authorUid: string (required, immutable, matches request.auth.uid on create)
+    //   - authorCallSign: string (optional, 1-50 chars)
+    //   - answerText: string (required, 1-5000 chars)
+    //   - createdAt: timestamp | number (required, immutable)
+    //   - updatedAt: timestamp | number (optional)
+    //   - isAccepted: bool (optional)
+    //
+    // Collection: wall_of_shame/{shameId}
+    // Document ID: Shame record ID
+    // Fields:
+    //   - userId: string (required, 1-128 chars)
+    //   - displayName: string (required, 1-50 chars)
+    //   - triggerId: string (required, 1-50 chars)
+    //   - triggerName: string (required, 1-100 chars)
+    //   - timestamp: timestamp | number (required)
+    //   - pointsDeducted: number (required, 0-100000)
+    //   - roomId: string (optional, 0-100 chars)
+    //   - verifiedBy: string | list (optional)
+    //   - evidenceUrl: string (optional, 0-500 chars)
     //
     // Collection: leaderboard/{entryType}
     // Document ID: Entry type (e.g. daily, weekly, all_time)
     // Fields:
     //   - type: string (required)
-    //   - updatedAt: timestamp (required)
+    //   - updatedAt: timestamp | number (required)
     //   - entries: list (max 100 items)
-    //
-    // Collection: wall_of_shame/{shameId}
-    // Document ID: Auto-generated shame log ID
-    // Fields:
-    //   - userId: string (required, 1-128 chars) - Shamed user UID
-    //   - displayName: string (required, 1-50 chars) - Shamed user handle
-    //   - triggerId: string (required, 1-50 chars) - Trigger category
-    //   - triggerName: string (required, 1-100 chars) - Distraction description
-    //   - timestamp: timestamp (required) - Offense timestamp
-    //   - pointsDeducted: number (required, >= 0, <= 100000)
-    //   - roomId: string (optional, 0-100 chars) - Associated room ID
-    //   - verifiedBy: string | list (optional) - Reporting user UID or peers
-    //   - evidenceUrl: string (optional, 0-500 chars)
     //
     // ===============================================================
 
@@ -102,26 +181,9 @@ service cloud.firestore {
         request.auth.token.admin == true;
     }
 
-    // Verify UID field is unchanged or matches caller UID on create
-    function uidUnchanged() {
-      return !('uid' in request.resource.data) ||
-        request.resource.data.uid == request.auth.uid;
-    }
-
-    // Ensure uid field is not modified on update
-    function uidNotModified() {
-      return !('uid' in request.resource.data) ||
-        request.resource.data.uid == resource.data.uid;
-    }
-
     // Validate that document has all required fields
     function hasRequiredFields(fields) {
       return request.resource.data.keys().hasAll(fields);
-    }
-
-    // Validate that the document contains only allowed fields (no schema pollution)
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
     }
 
     // Validate that specified immutable fields have not been modified on update
@@ -129,73 +191,157 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
     }
 
+    // Check if user is the room host based on hostUid or hostId
+    function isRoomHost(roomData) {
+      return ('hostUid' in roomData && roomData.hostUid == request.auth.uid) ||
+        ('hostId' in roomData && roomData.hostId == request.auth.uid);
+    }
+
     // ===============================================================
-    // Domain Validators
+    // Domain Validators (Applied to both create and update)
     // ===============================================================
 
-    // Validator for users/{userId} documents
+    // Validator for users/{userId} documents (Public Profile)
     function isValidUser(data) {
       let allowedFields = [
-        'displayName', 'photoURL', 'subjectGoal', 'totalPoints',
-        'cleanStudyMinutes', 'shameCount', 'topTrigger',
-        'createdAt', 'updatedAt', 'isAnonymous'
+        'displayName', 'callSign', 'photoURL', 'subjectGoal', 'isVerified',
+        'totalPoints', 'cleanStudyMinutes', 'shameCount', 'topTrigger',
+        'level', 'xp', 'coins', 'dailyStreak', 'lastStudyDate',
+        'unlockedBadges', 'createdAt', 'updatedAt', 'isAnonymous', 'uid'
       ];
 
       return data.keys().hasOnly(allowedFields) &&
         data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50 &&
+        (!('callSign' in data) || (data.callSign is string && data.callSign.size() >= 1 && data.callSign.size() <= 50)) &&
         (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500)) &&
         (!('subjectGoal' in data) || (data.subjectGoal is string && data.subjectGoal.size() <= 100)) &&
-        data.totalPoints is number && data.totalPoints >= 0 && data.totalPoints <= 10000000 &&
-        data.cleanStudyMinutes is number && data.cleanStudyMinutes >= 0 && data.cleanStudyMinutes <= 1000000 &&
-        data.shameCount is number && data.shameCount >= 0 && data.shameCount <= 100000 &&
+        (!('isVerified' in data) || data.isVerified is bool) &&
+        (!('totalPoints' in data) || (data.totalPoints is number && data.totalPoints >= 0 && data.totalPoints <= 10000000)) &&
+        (!('cleanStudyMinutes' in data) || (data.cleanStudyMinutes is number && data.cleanStudyMinutes >= 0 && data.cleanStudyMinutes <= 1000000)) &&
+        (!('shameCount' in data) || (data.shameCount is number && data.shameCount >= 0 && data.shameCount <= 100000)) &&
         (!('topTrigger' in data) || (data.topTrigger is string && data.topTrigger.size() <= 100)) &&
-        data.createdAt is timestamp &&
-        data.updatedAt is timestamp &&
-        data.isAnonymous is bool;
+        (!('level' in data) || (data.level is number && data.level >= 0 && data.level <= 10000)) &&
+        (!('xp' in data) || (data.xp is number && data.xp >= 0 && data.xp <= 100000000)) &&
+        (!('coins' in data) || (data.coins is number && data.coins >= 0 && data.coins <= 10000000)) &&
+        (!('dailyStreak' in data) || (data.dailyStreak is number && data.dailyStreak >= 0 && data.dailyStreak <= 10000)) &&
+        (!('lastStudyDate' in data) || (data.lastStudyDate is string && data.lastStudyDate.size() <= 50) || data.lastStudyDate is timestamp || data.lastStudyDate is number) &&
+        (!('unlockedBadges' in data) || (data.unlockedBadges is list && data.unlockedBadges.size() <= 100)) &&
+        (data.createdAt is timestamp || data.createdAt is number) &&
+        (data.updatedAt is timestamp || data.updatedAt is number) &&
+        (!('isAnonymous' in data) || data.isAnonymous is bool) &&
+        (!('uid' in data) || (data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128));
+    }
+
+    // Validator for users/{userId}/private/{docId} documents (PII & sensitive settings)
+    function isValidPrivateUserInfo(data) {
+      let allowedFields = [
+        'email', 'emailVerified', 'lastLogin', 'createdAt', 'updatedAt',
+        'userId', 'fcmToken', 'preferences'
+      ];
+
+      return data.keys().hasOnly(allowedFields) &&
+        (!('email' in data) || (data.email is string && data.email.size() <= 254)) &&
+        (!('emailVerified' in data) || data.emailVerified is bool) &&
+        (!('lastLogin' in data) || data.lastLogin is timestamp || data.lastLogin is number) &&
+        (!('createdAt' in data) || data.createdAt is timestamp || data.createdAt is number) &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp || data.updatedAt is number) &&
+        (!('userId' in data) || (data.userId is string && data.userId.size() <= 128)) &&
+        (!('fcmToken' in data) || (data.fcmToken is string && data.fcmToken.size() <= 500)) &&
+        (!('preferences' in data) || data.preferences is map);
     }
 
     // Validator for rooms/{roomId} timerState map
     function isValidTimerState(timer) {
-      let allowedTimerKeys = ['mode', 'duration', 'startedAt', 'isPaused'];
+      let allowedTimerKeys = ['mode', 'duration', 'startedAt', 'isPaused', 'remaining', 'endsAt'];
 
       return timer is map &&
         timer.keys().hasOnly(allowedTimerKeys) &&
-        timer.mode is string && timer.mode.size() >= 1 && timer.mode.size() <= 30 &&
-        timer.duration is number && timer.duration >= 0 && timer.duration <= 86400 &&
+        (!('mode' in timer) || (timer.mode is string && timer.mode.size() >= 1 && timer.mode.size() <= 30)) &&
+        (!('duration' in timer) || (timer.duration is number && timer.duration >= 0 && timer.duration <= 86400)) &&
         (!('startedAt' in timer) || timer.startedAt == null || timer.startedAt is timestamp || timer.startedAt is number) &&
-        timer.isPaused is bool;
+        (!('isPaused' in timer) || timer.isPaused is bool) &&
+        (!('remaining' in timer) || (timer.remaining is number && timer.remaining >= 0 && timer.remaining <= 86400)) &&
+        (!('endsAt' in timer) || timer.endsAt == null || timer.endsAt is timestamp || timer.endsAt is number);
     }
 
     // Validator for rooms/{roomId} documents
     function isValidRoom(data) {
-      let allowedFields = ['name', 'createdAt', 'updatedAt', 'hostId', 'participantCount', 'timerState'];
+      let allowedFields = [
+        'roomId', 'title', 'name', 'sector', 'hostUid', 'hostId',
+        'createdAt', 'lastPing', 'updatedAt', 'activeCount',
+        'participantCount', 'timerState', 'isPrivate', 'passcode'
+      ];
 
       return data.keys().hasOnly(allowedFields) &&
-        data.name is string && data.name.size() >= 1 && data.name.size() <= 60 &&
-        data.createdAt is timestamp &&
-        data.updatedAt is timestamp &&
-        data.hostId is string && data.hostId.size() >= 1 && data.hostId.size() <= 128 &&
-        data.participantCount is number && data.participantCount >= 0 && data.participantCount <= 8 &&
-        isValidTimerState(data.timerState);
+        (('name' in data) || ('title' in data)) &&
+        (('hostUid' in data) || ('hostId' in data)) &&
+        (!('roomId' in data) || (data.roomId is string && data.roomId.size() >= 1 && data.roomId.size() <= 128)) &&
+        (!('title' in data) || (data.title is string && data.title.size() >= 1 && data.title.size() <= 100)) &&
+        (!('name' in data) || (data.name is string && data.name.size() >= 1 && data.name.size() <= 100)) &&
+        (!('sector' in data) || (data.sector is string && data.sector.size() >= 1 && data.sector.size() <= 50)) &&
+        (!('hostUid' in data) || (data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128)) &&
+        (!('hostId' in data) || (data.hostId is string && data.hostId.size() >= 1 && data.hostId.size() <= 128)) &&
+        (data.createdAt is timestamp || data.createdAt is number) &&
+        (!('lastPing' in data) || data.lastPing is timestamp || data.lastPing is number) &&
+        (data.updatedAt is timestamp || data.updatedAt is number) &&
+        (!('activeCount' in data) || (data.activeCount is number && data.activeCount >= 0 && data.activeCount <= 100)) &&
+        (!('participantCount' in data) || (data.participantCount is number && data.participantCount >= 0 && data.participantCount <= 100)) &&
+        (!('timerState' in data) || isValidTimerState(data.timerState)) &&
+        (!('isPrivate' in data) || data.isPrivate is bool) &&
+        (!('passcode' in data) || (data.passcode is string && data.passcode.size() <= 50));
     }
 
     // Validator for rooms/{roomId}/participants/{participantId} documents
     function isValidParticipant(data) {
       let allowedFields = [
-        'userId', 'displayName', 'peerId', 'joinedAt', 'lastSeen',
-        'status', 'isHandRaised', 'shameReason', 'timerRemaining'
+        'peerId', 'callSign', 'displayName', 'userId', 'cameraMode',
+        'joinedAt', 'lastSeen', 'isVerified', 'status', 'isHandRaised',
+        'shameReason', 'timerRemaining'
       ];
 
       return data.keys().hasOnly(allowedFields) &&
         data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
-        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50 &&
+        (!('displayName' in data) || (data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50)) &&
+        (!('callSign' in data) || (data.callSign is string && data.callSign.size() >= 1 && data.callSign.size() <= 50)) &&
         (!('peerId' in data) || (data.peerId is string && data.peerId.size() <= 100)) &&
-        data.joinedAt is timestamp &&
-        data.lastSeen is timestamp &&
-        data.status in ['LOCKED_IN', 'GRACE', 'SHAMED', 'BREAK'] &&
-        data.isHandRaised is bool &&
+        (!('cameraMode' in data) || (data.cameraMode is string && data.cameraMode.size() <= 50)) &&
+        (data.joinedAt is timestamp || data.joinedAt is number) &&
+        (data.lastSeen is timestamp || data.lastSeen is number) &&
+        (!('isVerified' in data) || data.isVerified is bool) &&
+        (!('status' in data) || (data.status is string && data.status.size() >= 1 && data.status.size() <= 30)) &&
+        (!('isHandRaised' in data) || data.isHandRaised is bool) &&
         (!('shameReason' in data) || (data.shameReason is string && data.shameReason.size() <= 200)) &&
-        data.timerRemaining is number && data.timerRemaining >= 0 && data.timerRemaining <= 86400;
+        (!('timerRemaining' in data) || (data.timerRemaining is number && data.timerRemaining >= 0 && data.timerRemaining <= 86400));
+    }
+
+    // Helper validator for WebRTC SDP payloads
+    function isValidSdp(sdp) {
+      return sdp is map &&
+        sdp.keys().hasOnly(['type', 'sdp']) &&
+        (!('type' in sdp) || (sdp.type is string && sdp.type.size() <= 30)) &&
+        (!('sdp' in sdp) || (sdp.sdp is string && sdp.sdp.size() <= 65536));
+    }
+
+    // Validator for rooms/{roomId}/connections/{connectionId} documents
+    function isValidConnection(data) {
+      let allowedFields = ['callerId', 'calleeId', 'offer', 'answer', 'createdAt', 'answeredAt'];
+
+      return data.keys().hasOnly(allowedFields) &&
+        data.callerId is string && data.callerId.size() >= 1 && data.callerId.size() <= 128 &&
+        data.calleeId is string && data.calleeId.size() >= 1 && data.calleeId.size() <= 128 &&
+        (!('offer' in data) || isValidSdp(data.offer)) &&
+        (!('answer' in data) || isValidSdp(data.answer)) &&
+        (data.createdAt is timestamp || data.createdAt is number) &&
+        (!('answeredAt' in data) || data.answeredAt is timestamp || data.answeredAt is number);
+    }
+
+    // Validator for ICE candidates
+    function isValidCandidate(data) {
+      let allowedFields = ['candidate', 'createdAt'];
+
+      return data.keys().hasOnly(allowedFields) &&
+        ('candidate' in data) && (data.candidate is map || (data.candidate is string && data.candidate.size() <= 4096)) &&
+        (data.createdAt is timestamp || data.createdAt is number);
     }
 
     // Validator for rooms/{roomId}/events/{eventId} documents
@@ -209,7 +355,48 @@ service cloud.firestore {
         (!('message' in data) || (data.message is string && data.message.size() <= 500)) &&
         (!('payload' in data) || (data.payload is map)) &&
         (!('targetUserId' in data) || (data.targetUserId is string && data.targetUserId.size() <= 128)) &&
-        data.timestamp is timestamp;
+        (data.timestamp is timestamp || data.timestamp is number);
+    }
+
+    // Validator for doubts/{doubtId} documents
+    function isValidDoubt(data) {
+      let allowedFields = [
+        'doubtId', 'authorUid', 'authorCallSign', 'subject',
+        'questionText', 'imageUrl', 'bountyCoins', 'status',
+        'createdAt', 'updatedAt', 'acceptedAnswerId', 'solverUid'
+      ];
+
+      return data.keys().hasOnly(allowedFields) &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 100 &&
+        data.questionText is string && data.questionText.size() >= 1 && data.questionText.size() <= 5000 &&
+        data.status is string && data.status in ['OPEN', 'RESOLVED', 'CLOSED', 'ANSWERED'] &&
+        (!('doubtId' in data) || (data.doubtId is string && data.doubtId.size() >= 1 && data.doubtId.size() <= 128)) &&
+        (!('authorCallSign' in data) || (data.authorCallSign is string && data.authorCallSign.size() >= 1 && data.authorCallSign.size() <= 50)) &&
+        (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 500)) &&
+        (!('bountyCoins' in data) || (data.bountyCoins is number && data.bountyCoins >= 0 && data.bountyCoins <= 100000)) &&
+        (data.createdAt is timestamp || data.createdAt is number) &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp || data.updatedAt is number) &&
+        (!('acceptedAnswerId' in data) || (data.acceptedAnswerId is string && data.acceptedAnswerId.size() <= 128)) &&
+        (!('solverUid' in data) || (data.solverUid is string && data.solverUid.size() <= 128));
+    }
+
+    // Validator for doubts/{doubtId}/answers/{answerId} documents
+    function isValidAnswer(data) {
+      let allowedFields = [
+        'answerId', 'doubtId', 'authorUid', 'authorCallSign',
+        'answerText', 'createdAt', 'updatedAt', 'isAccepted'
+      ];
+
+      return data.keys().hasOnly(allowedFields) &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        data.answerText is string && data.answerText.size() >= 1 && data.answerText.size() <= 5000 &&
+        (!('answerId' in data) || (data.answerId is string && data.answerId.size() >= 1 && data.answerId.size() <= 128)) &&
+        (!('doubtId' in data) || (data.doubtId is string && data.doubtId.size() >= 1 && data.doubtId.size() <= 128)) &&
+        (!('authorCallSign' in data) || (data.authorCallSign is string && data.authorCallSign.size() >= 1 && data.authorCallSign.size() <= 50)) &&
+        (data.createdAt is timestamp || data.createdAt is number) &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp || data.updatedAt is number) &&
+        (!('isAccepted' in data) || data.isAccepted is bool);
     }
 
     // Validator for wall_of_shame/{shameId} documents
@@ -224,7 +411,7 @@ service cloud.firestore {
         data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50 &&
         data.triggerId is string && data.triggerId.size() >= 1 && data.triggerId.size() <= 50 &&
         data.triggerName is string && data.triggerName.size() >= 1 && data.triggerName.size() <= 100 &&
-        data.timestamp is timestamp &&
+        (data.timestamp is timestamp || data.timestamp is number) &&
         data.pointsDeducted is number && data.pointsDeducted >= 0 && data.pointsDeducted <= 100000 &&
         (!('roomId' in data) || (data.roomId is string && data.roomId.size() <= 100)) &&
         (!('verifiedBy' in data) || (data.verifiedBy is list && data.verifiedBy.size() <= 10) || (data.verifiedBy is string && data.verifiedBy.size() <= 128)) &&
@@ -242,20 +429,35 @@ service cloud.firestore {
 
     // 1. Users collection: Public profiles for room displays & accountability leaderboard
     match /users/{userId} {
-      // Authenticated users can view user profiles (no PII is stored in this collection)
+      // Authenticated users can view public user profiles (contains NO PII)
       allow read: if isAuthenticated();
 
-      // Only the authenticated user can create their own profile
+      // Only the authenticated account owner can create their profile
       allow create: if isOwner(userId) &&
         isValidUser(request.resource.data);
 
-      // Only the authenticated user can update their profile; creation timestamp is immutable
+      // Only the owner can update profile; createdAt cannot be changed
       allow update: if isOwner(userId) &&
         isValidUser(request.resource.data) &&
         areImmutableFieldsUnchanged(['createdAt']);
 
-      // Account deletion allowed only by the owner
-      allow delete: if isOwner(userId);
+      // Account deletion allowed only by the owner or admin
+      allow delete: if isOwner(userId) || isAdmin();
+
+      // Subcollection: Private user data & PII (email, settings, push tokens)
+      match /private/{docId} {
+        // Strictly readable ONLY by the document owner - NEVER publicly accessible
+        allow read: if isOwner(userId);
+
+        // Strictly writable ONLY by the document owner
+        allow create: if isOwner(userId) &&
+          isValidPrivateUserInfo(request.resource.data);
+
+        allow update: if isOwner(userId) &&
+          isValidPrivateUserInfo(request.resource.data);
+
+        allow delete: if isOwner(userId);
+      }
     }
 
     // 2. Rooms collection: Public lobby & multi-user study sessions
@@ -265,34 +467,36 @@ service cloud.firestore {
 
       // Authenticated users can create rooms and become initial host
       allow create: if isAuthenticated() &&
-        request.resource.data.hostId == request.auth.uid &&
-        isValidRoom(request.resource.data);
-
-      // Authenticated users can update rooms (e.g. syncing timer, joining/leaving participantCount <= 8)
-      // Non-host users cannot alter hostId or createdAt
-      allow update: if isAuthenticated() &&
         isValidRoom(request.resource.data) &&
         (
-          resource.data.hostId == request.auth.uid ||
-          areImmutableFieldsUnchanged(['createdAt', 'hostId'])
+          ('hostUid' in request.resource.data && request.resource.data.hostUid == request.auth.uid) ||
+          ('hostId' in request.resource.data && request.resource.data.hostId == request.auth.uid)
+        );
+
+      // Authenticated users can update rooms (e.g. syncing timer, heartbeat lastPing, activeCount)
+      // Non-hosts cannot alter hostUid, hostId, or createdAt
+      allow update: if isAuthenticated() &&
+        isValidRoom(request.resource.data) &&
+        areImmutableFieldsUnchanged(['createdAt']) &&
+        (
+          isRoomHost(resource.data) ||
+          areImmutableFieldsUnchanged(['hostUid', 'hostId'])
         );
 
       // Only the host or an admin can delete a room
       allow delete: if isAuthenticated() &&
-        (resource.data.hostId == request.auth.uid || isAdmin());
+        (isRoomHost(resource.data) || isAdmin());
 
-      // 3. Subcollection: Active participants in a study room
+      // 2a. Subcollection: Active participants in a study room
       match /participants/{participantId} {
-        // Any authenticated user in the app can inspect active room participants
         allow read: if isAuthenticated();
 
         // User can only create their own participant document
         allow create: if isAuthenticated() &&
-          request.auth.uid == participantId &&
-          request.resource.data.userId == request.auth.uid &&
+          (request.auth.uid == participantId || request.resource.data.userId == request.auth.uid) &&
           isValidParticipant(request.resource.data);
 
-        // User can only update their own participant doc; userId and joinedAt are immutable
+        // User can update their own participant doc; userId and joinedAt are immutable
         allow update: if isAuthenticated() &&
           (request.auth.uid == participantId || resource.data.userId == request.auth.uid) &&
           isValidParticipant(request.resource.data) &&
@@ -304,13 +508,54 @@ service cloud.firestore {
             request.auth.uid == participantId ||
             resource.data.userId == request.auth.uid ||
             (exists(/databases/$(database)/documents/rooms/$(roomId)) &&
-             get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid)
+             isRoomHost(get(/databases/$(database)/documents/rooms/$(roomId)).data)) ||
+            isAdmin()
           );
       }
 
-      // 4. Subcollection: Ephemeral room events (trigger alerts, peer callout votes, hand raises, chat/nudge)
+      // 2b. Subcollection: Deterministic Peer-Pair WebRTC signaling ({smallerId}_{largerId})
+      match /connections/{connectionId} {
+        allow read: if isAuthenticated();
+
+        // Either participant in the peer pair can initiate signaling
+        allow create: if isAuthenticated() &&
+          isValidConnection(request.resource.data) &&
+          (request.resource.data.callerId == request.auth.uid || request.resource.data.calleeId == request.auth.uid);
+
+        // Callee writing answer or caller updating session; immutable peer IDs and timestamp
+        allow update: if isAuthenticated() &&
+          isValidConnection(request.resource.data) &&
+          areImmutableFieldsUnchanged(['createdAt', 'callerId', 'calleeId']) &&
+          (resource.data.callerId == request.auth.uid || resource.data.calleeId == request.auth.uid);
+
+        // Participants or room host can clean up closed connections
+        allow delete: if isAuthenticated() &&
+          (
+            resource.data.callerId == request.auth.uid ||
+            resource.data.calleeId == request.auth.uid ||
+            (exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+             isRoomHost(get(/databases/$(database)/documents/rooms/$(roomId)).data)) ||
+            isAdmin()
+          );
+
+        // ICE candidate exchange subcollections
+        match /callerCandidates/{candidateId} {
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated() && isValidCandidate(request.resource.data);
+          allow update: if false;
+          allow delete: if isAuthenticated();
+        }
+
+        match /calleeCandidates/{candidateId} {
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated() && isValidCandidate(request.resource.data);
+          allow update: if false;
+          allow delete: if isAuthenticated();
+        }
+      }
+
+      // 2c. Subcollection: Ephemeral room events (trigger alerts, peer callout votes, hand raises)
       match /events/{eventId} {
-        // Any authenticated user in the room can listen to events
         allow read: if isAuthenticated();
 
         // Authenticated participants can create events stamped with their own senderId
@@ -320,28 +565,75 @@ service cloud.firestore {
         // Room events are append-only audit entries; updates disallowed
         allow update: if false;
 
-        // Sender or host can prune events
+        // Sender, room host, or admin can prune events
         allow delete: if isAuthenticated() &&
           (
             resource.data.senderId == request.auth.uid ||
             (exists(/databases/$(database)/documents/rooms/$(roomId)) &&
-             get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid)
+             isRoomHost(get(/databases/$(database)/documents/rooms/$(roomId)).data)) ||
+            isAdmin()
           );
       }
     }
 
-    // 5. Leaderboard collection: Aggregate rankings (daily, weekly, all-time)
-    match /leaderboard/{entryType} {
-      // Authenticated users can read the leaderboard
+    // 3. Peer Doubt Board collection: Questions and community assistance
+    match /doubts/{doubtId} {
       allow read: if isAuthenticated();
 
-      // Only trusted system admin or Cloud Functions can update aggregate leaderboard records
-      allow write: if isAdmin();
+      // Only authenticated authors can post a new doubt stamped with their authorUid
+      allow create: if isAuthenticated() &&
+        request.resource.data.authorUid == request.auth.uid &&
+        isValidDoubt(request.resource.data);
+
+      // Author or solver can update status/answer fields; creation metadata is immutable
+      allow update: if isAuthenticated() &&
+        isValidDoubt(request.resource.data) &&
+        areImmutableFieldsUnchanged(['createdAt', 'authorUid']) &&
+        (
+          resource.data.authorUid == request.auth.uid ||
+          resource.data.solverUid == request.auth.uid ||
+          ('solverUid' in request.resource.data && request.resource.data.solverUid == request.auth.uid) ||
+          isAdmin()
+        );
+
+      // Only doubt author or admin can delete
+      allow delete: if isAuthenticated() &&
+        (resource.data.authorUid == request.auth.uid || isAdmin());
+
+      // 3a. Subcollection: Answers submitted to a doubt
+      match /answers/{answerId} {
+        allow read: if isAuthenticated();
+
+        // Any authenticated peer can answer a doubt stamped with their authorUid
+        allow create: if isAuthenticated() &&
+          request.resource.data.authorUid == request.auth.uid &&
+          isValidAnswer(request.resource.data);
+
+        // Answer author or doubt author (accepting answer) can update; authorUid and createdAt immutable
+        allow update: if isAuthenticated() &&
+          isValidAnswer(request.resource.data) &&
+          areImmutableFieldsUnchanged(['createdAt', 'authorUid']) &&
+          (
+            resource.data.authorUid == request.auth.uid ||
+            (exists(/databases/$(database)/documents/doubts/$(doubtId)) &&
+             get(/databases/$(database)/documents/doubts/$(doubtId)).data.authorUid == request.auth.uid) ||
+            isAdmin()
+          );
+
+        // Answer author, doubt author, or admin can delete an answer
+        allow delete: if isAuthenticated() &&
+          (
+            resource.data.authorUid == request.auth.uid ||
+            (exists(/databases/$(database)/documents/doubts/$(doubtId)) &&
+             get(/databases/$(database)/documents/doubts/$(doubtId)).data.authorUid == request.auth.uid) ||
+            isAdmin()
+          );
+      }
     }
 
-    // 6. Wall of Shame: Public accountability log of focus breaks & distractions
+    // 4. Wall of Shame: Public accountability log of focus breaks & distractions
     match /wall_of_shame/{shameId} {
-      // Readable by all authenticated users (including Anonymous Auth users)
+      // Readable by all authenticated users
       allow read: if isAuthenticated();
 
       // Created by the user themselves upon distraction detection, or peer-verified in room
@@ -360,6 +652,15 @@ service cloud.firestore {
 
       // Only admin can remove a shame log
       allow delete: if isAdmin();
+    }
+
+    // 5. Leaderboard collection: Aggregate rankings (daily, weekly, all-time)
+    match /leaderboard/{entryType} {
+      // Authenticated users can read the leaderboard
+      allow read: if isAuthenticated();
+
+      // Only trusted system admin or Cloud Functions can update aggregate leaderboard records
+      allow write: if isAdmin();
     }
   }
 }

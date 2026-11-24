@@ -59,66 +59,77 @@ document.addEventListener('DOMContentLoaded', () => {
     const inviteBanner = document.getElementById('invite-banner');
     const inviteRoomName = document.getElementById('invite-room-name');
     const acceptInviteBtn = document.getElementById('btn-accept-invite');
+    const cleanRoomParam = roomParam.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
 
     if (inviteBanner && inviteRoomName) {
       inviteBanner.classList.remove('hidden');
-      inviteRoomName.textContent = roomParam + (isPrivate ? ' (Private Spaceship)' : ' (Public Lobby)');
+      inviteRoomName.textContent = cleanRoomParam + (isPrivate ? ' (Private Room)' : ' (Public Lobby)');
     }
 
     if (isPrivate) {
       setRoomMode('private');
-      if (privateRoomInput) privateRoomInput.value = roomParam;
+      if (privateRoomInput) privateRoomInput.value = cleanRoomParam;
       if (keyParam && privatePasscodeInput) privatePasscodeInput.value = keyParam;
     }
 
     if (acceptInviteBtn) {
       acceptInviteBtn.addEventListener('click', () => {
-        const cleanName = roomParam.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-        startStudySession(cleanName, isPrivate, keyParam || null);
+        startStudySession(cleanRoomParam, isPrivate, keyParam || null);
       });
     }
   }
 
-  // 2. Real Active Public Rooms (No decoy rooms!)
+  // Toast Notification System
+  function showToast(message, duration = 2500) {
+    let toast = document.getElementById('app-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'app-toast';
+      toast.className = 'app-toast';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.classList.remove('hidden');
+    toast.classList.add('visible');
+    clearTimeout(toast._timeout);
+    toast._timeout = setTimeout(() => {
+      toast.classList.remove('visible');
+      setTimeout(() => toast.classList.add('hidden'), 300);
+    }, duration);
+  }
+  window.showToast = showToast;
+
+  // 2. Real Active Public Rooms (Synced with Firestore)
   let currentFilter = 'all';
-  const defaultPublicRooms = [
+  let activeRoomsCache = [
     {
-      id: 'main-study-hall',
+      id: 'MAIN-STUDY-HALL',
+      roomId: 'MAIN-STUDY-HALL',
       name: '⚡ Main Study Hall (24/7 Community)',
+      title: '⚡ Main Study Hall (24/7 Community)',
       host: 'Community',
       category: 'all',
+      sector: 'all',
       tag: '🌐 Open Study Hall',
       timer: '25m',
       color: 'color-green',
-      online: 1
+      activeCount: 1
     }
   ];
 
-  // Restore user-hosted rooms from local storage
-  try {
-    const saved = JSON.parse(localStorage.getItem('lockedin_active_rooms') || '[]');
-    if (Array.isArray(saved)) {
-      saved.forEach(r => {
-        if (!defaultPublicRooms.find(existing => existing.id === r.id)) {
-          defaultPublicRooms.push(r);
-        }
-      });
-    }
-  } catch (e) {}
-
-  function renderPublicRooms() {
+  function renderPublicRooms(roomsList = activeRoomsCache) {
     const listEl = document.getElementById('public-room-list');
     if (!listEl) return;
     listEl.innerHTML = '';
 
-    const filtered = defaultPublicRooms.filter(r => currentFilter === 'all' || r.category === currentFilter);
+    const filtered = roomsList.filter(r => currentFilter === 'all' || (r.sector || r.category) === currentFilter);
 
     if (filtered.length === 0) {
       listEl.innerHTML = `
         <div style="padding: 24px 16px; text-align: center; color: var(--text-secondary);">
           <div style="font-size: 1.8rem; margin-bottom: 8px;">📭</div>
-          <p style="font-size: 0.9rem; margin-bottom: 8px; font-weight: 500;">No custom rooms in this category right now.</p>
-          <p style="font-size: 0.8rem; color: var(--text-tertiary);">Launch your own in the <strong>HOST</strong> tab or click <strong>Quick Matchmake</strong> to enter the Main Study Hall!</p>
+          <p style="font-size: 0.9rem; margin-bottom: 8px; font-weight: 500;">No active rooms in this sector right now.</p>
+          <p style="font-size: 0.8rem; color: var(--text-tertiary);">Launch your own in the <strong>HOST</strong> tab or enter the Main Study Hall!</p>
         </div>
       `;
       return;
@@ -127,15 +138,18 @@ document.addEventListener('DOMContentLoaded', () => {
     filtered.forEach(room => {
       const card = document.createElement('div');
       card.className = 'au-room-card';
+      const rId = room.roomId || room.id;
+      const count = room.activeCount || room.participantCount || 1;
 
       card.innerHTML = `
         <div class="au-room-left">
-          <div class="au-crewmate-icon ${room.color}"></div>
+          <div class="au-crewmate-icon ${room.color || 'color-orange'}"></div>
           <div class="au-room-details">
-            <span class="au-room-title">${room.name}</span>
+            <span class="au-room-title">${room.title || room.name || rId}</span>
             <div class="au-room-tags">
-              <span class="au-tag-chip">${room.tag}</span>
-              <span class="au-timer-chip">${room.timer}</span>
+              <span class="au-tag-chip">${room.tag || (room.sector ? room.sector.toUpperCase() : 'FOCUS')}</span>
+              <span class="au-timer-chip">${room.timer || '25m'}</span>
+              <span class="au-timer-chip" style="color:#10b981; border-color:rgba(16,185,129,0.4);">🟢 ${count} Active</span>
             </div>
           </div>
         </div>
@@ -147,14 +161,25 @@ document.addEventListener('DOMContentLoaded', () => {
       const joinBtn = card.querySelector('.au-join-btn');
       if (joinBtn) {
         joinBtn.addEventListener('click', () => {
-          startStudySession(room.id, false, null);
+          startStudySession(rId, false, null);
         });
       }
       listEl.appendChild(card);
     });
   }
 
-  renderPublicRooms();
+  // Connect Active Rooms to Real-Time Firestore Listener
+  window.FirebaseSync.listenToActiveRooms((freshRooms) => {
+    if (freshRooms && freshRooms.length > 0) {
+      // Merge with default Main Study Hall
+      const hasMain = freshRooms.some(r => (r.roomId || r.id) === 'MAIN-STUDY-HALL');
+      if (!hasMain) {
+        freshRooms.unshift(activeRoomsCache[0]);
+      }
+      activeRoomsCache = freshRooms;
+    }
+    renderPublicRooms(activeRoomsCache);
+  });
 
   // Filter chips
   document.querySelectorAll('.filter-chip').forEach(chip => {
@@ -162,26 +187,39 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
       currentFilter = chip.getAttribute('data-filter');
-      renderPublicRooms();
+      renderPublicRooms(activeRoomsCache);
     });
   });
 
+  // Wire 🔄 Refresh button with spinning animation & immediate getDocs() fetch
   const refreshRoomsBtn = document.getElementById('btn-refresh-rooms');
   if (refreshRoomsBtn) {
-    refreshRoomsBtn.addEventListener('click', () => {
-      renderPublicRooms();
+    refreshRoomsBtn.addEventListener('click', async () => {
+      refreshRoomsBtn.classList.add('is-spinning');
+      try {
+        const fresh = await window.FirebaseSync.getActiveRoomsOnce();
+        if (fresh && fresh.length > 0) {
+          activeRoomsCache = fresh;
+        }
+        renderPublicRooms(activeRoomsCache);
+        showToast('🔄 Active room list refreshed');
+      } catch (err) {
+        console.warn('Refresh error:', err);
+      } finally {
+        setTimeout(() => refreshRoomsBtn.classList.remove('is-spinning'), 650);
+      }
     });
   }
 
-  // Quick Join Public Lobby Button -> Guaranteed to put everyone in Main Study Hall!
+  // Quick Join Public Lobby Button
   const quickJoinPublicBtn = document.getElementById('btn-quick-join-public');
   if (quickJoinPublicBtn) {
     quickJoinPublicBtn.addEventListener('click', () => {
-      startStudySession('main-study-hall', false, null);
+      startStudySession('MAIN-STUDY-HALL', false, null);
     });
   }
 
-  // Enter Room by Code Button & Arrow Button
+  // Enter Room by Code Button & Arrow Button (Case-insensitive trim)
   const joinPrivateBtn = document.getElementById('btn-join-private');
   const submitCodeArrow = document.getElementById('btn-submit-code-arrow');
 
@@ -190,12 +228,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const passcode = (privatePasscodeInput.value || '').trim();
 
     if (!rawCode) {
-      alert('Please enter a Room Code (e.g. "math" or "chemistry").');
+      alert('Please enter a Room Code (e.g. "STUDY-492" or "MATH").');
       privateRoomInput.focus();
       return;
     }
 
-    const cleanCode = rawCode.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24);
+    const cleanCode = rawCode.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
     startStudySession(cleanCode, !!passcode, passcode || null);
   }
 
@@ -218,56 +256,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const createHostBtn = document.getElementById('btn-create-host-room');
   if (createHostBtn) {
-    createHostBtn.addEventListener('click', () => {
+    createHostBtn.addEventListener('click', async () => {
       const titleInput = document.getElementById('input-host-room-title');
       const subjectSelect = document.getElementById('select-host-subject');
-      const rawTitle = (titleInput && titleInput.value.trim()) || "Focus Lounge";
-      const subject = subjectSelect ? subjectSelect.options[subjectSelect.selectedIndex].text : 'General Deep Work';
-      const category = subjectSelect ? subjectSelect.value : 'stem';
+      const rawTitle = (titleInput && titleInput.value.trim()) || '';
+      const sector = subjectSelect ? subjectSelect.value : 'stem';
 
-      // Set host preset on timer
+      // Clean 6-character uppercase code e.g. STUDY-492 OR custom room name
+      let cleanId;
+      if (rawTitle) {
+        cleanId = rawTitle.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 20);
+      } else {
+        cleanId = 'STUDY-' + Math.floor(100 + Math.random() * 900);
+      }
+      if (!cleanId) cleanId = 'STUDY-' + Math.floor(100 + Math.random() * 900);
+
+      const displayTitle = rawTitle || `Study Lounge (${cleanId})`;
+
       if (window.StudyTimer) {
         window.StudyTimer.setPreset(hostFocus, hostBreak);
       }
 
-      // Generate a clean room ID based directly on title (easy to share!)
-      const cleanId = rawTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 20) || 'study-room';
-
-      // Register this newly created lobby into the public room list
-      const roomEntry = {
-        id: cleanId,
-        name: rawTitle,
-        host: displayNameInput?.value || 'Host',
-        category: category,
-        tag: subject,
-        timer: `${hostFocus}m`,
-        color: 'color-orange',
-        online: 1
-      };
-
-      const existingIdx = defaultPublicRooms.findIndex(r => r.id === cleanId);
-      if (existingIdx >= 0) {
-        defaultPublicRooms[existingIdx] = roomEntry;
-      } else {
-        defaultPublicRooms.unshift(roomEntry);
-      }
+      createHostBtn.disabled = true;
+      createHostBtn.textContent = '⏳ Creating Room...';
 
       try {
-        localStorage.setItem('lockedin_active_rooms', JSON.stringify(defaultPublicRooms.filter(r => r.id !== 'main-study-hall')));
-      } catch (e) {}
+        // Immediately write rooms/{roomId} to Firestore & await confirmation before entering!
+        await window.FirebaseSync.createRoom({
+          roomId: cleanId,
+          title: displayTitle,
+          sector: sector,
+          focusMinutes: hostFocus
+        });
 
-      renderPublicRooms();
-
-      createHostBtn.disabled = true;
-      const originalText = createHostBtn.textContent;
-      createHostBtn.textContent = '⏳ Launching Lobby...';
-
-      startStudySession(cleanId, false, null).catch(err => {
+        showToast(`🚀 Room ${cleanId} launched!`);
+        await startStudySession(cleanId, false, null);
+      } catch (err) {
         console.error('[App] Failed to launch host session:', err);
-      }).finally(() => {
+        alert('Room creation failed: ' + (err.message || 'Please try again.'));
+      } finally {
         createHostBtn.disabled = false;
-        createHostBtn.textContent = originalText;
-      });
+        createHostBtn.textContent = '🚀 Launch New Study Lobby';
+      }
     });
   }
 
@@ -286,6 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 3. Centralized Study Session Starter
   async function startStudySession(roomId, isPrivate = false, passcode = null) {
+    const cleanRoom = roomId ? String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24) : 'MAIN-STUDY-HALL';
     const displayName = (displayNameInput.value || '').trim() || 'FocusScholar';
     const subjectGoal = (subjectGoalInput.value || '').trim() || 'General Deep Study';
     let selectedMode = 'dual';
@@ -327,8 +358,8 @@ document.addEventListener('DOMContentLoaded', () => {
       joinPrivateBtn.textContent = 'Enter Private Room';
     }
 
-    // Join WebRTC room
-    await window.WebRTCRoom.joinStudyRoom(roomId, isPrivate, passcode);
+    // Join WebRTC room with normalized uppercase room ID
+    await window.WebRTCRoom.joinStudyRoom(cleanRoom, isPrivate, passcode);
 
     // Start Trigger Engine monitoring with active camera element
     const localCamVideo = document.getElementById('local-cam-video');
@@ -387,16 +418,40 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 4. Copy Invite Link
+  // 4. Prominent Room Code & Invite Link Actions
+  const btnCopyRoomCode = document.getElementById('btn-copy-room-code');
+  if (btnCopyRoomCode) {
+    btnCopyRoomCode.addEventListener('click', () => {
+      const code = window.WebRTCRoom.roomId || 'STUDY-101';
+      navigator.clipboard.writeText(code).then(() => {
+        showToast('📋 Room Code copied: ' + code);
+      }).catch(() => {
+        prompt('Copy Room Code:', code);
+      });
+    });
+  }
+
+  const btnCopyRoomLink = document.getElementById('btn-copy-room-link');
+  if (btnCopyRoomLink) {
+    btnCopyRoomLink.addEventListener('click', () => {
+      const code = window.WebRTCRoom.roomId || 'STUDY-101';
+      const inviteUrl = `https://omkar5144s.github.io/locked-in-study/?room=${encodeURIComponent(code)}`;
+      navigator.clipboard.writeText(inviteUrl).then(() => {
+        showToast('🔗 Invite Link copied!');
+      }).catch(() => {
+        prompt('Copy Invite Link:', inviteUrl);
+      });
+    });
+  }
+
   const copyLinkBtn = document.getElementById('btn-copy-invite');
   if (copyLinkBtn) {
     copyLinkBtn.addEventListener('click', () => {
-      const currentRoom = window.WebRTCRoom.roomId || 'focus-lobby-1';
+      const currentRoom = window.WebRTCRoom.roomId || 'STUDY-101';
       const isPrivate = window.WebRTCRoom.isPrivate;
       const passcode = window.WebRTCRoom.passcode;
-      const displayRoom = currentRoom.replace(/^private-/, '');
 
-      let inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(displayRoom)}`;
+      let inviteUrl = `https://omkar5144s.github.io/locked-in-study/?room=${encodeURIComponent(currentRoom)}`;
       if (isPrivate) {
         inviteUrl += '&private=1';
         if (passcode) {
@@ -405,14 +460,53 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       navigator.clipboard.writeText(inviteUrl).then(() => {
-        const originalText = copyLinkBtn.innerHTML;
-        copyLinkBtn.innerHTML = '<span>✅ Link Copied!</span>';
-        setTimeout(() => copyLinkBtn.innerHTML = originalText, 2500);
+        showToast('🔗 Invite Link copied!');
       }).catch(() => {
         prompt('Copy invite link:', inviteUrl);
       });
     });
   }
+
+  // Google Sign-In & Verified Profile Chip
+  const googleAuthBtn = document.getElementById('btn-google-auth');
+  const userProfileChip = document.getElementById('user-profile-chip');
+  const headerAvatarInitial = document.getElementById('header-avatar-initial');
+  const headerUserCallsign = document.getElementById('header-user-callsign');
+
+  function updateAuthUI(user) {
+    if (user && user.isVerified) {
+      if (googleAuthBtn) googleAuthBtn.style.display = 'none';
+      if (userProfileChip) {
+        userProfileChip.classList.remove('hidden');
+        const initial = (user.callSign || user.displayName || 'S').slice(0, 1).toUpperCase();
+        if (headerAvatarInitial) headerAvatarInitial.textContent = initial;
+        if (headerUserCallsign) headerUserCallsign.textContent = user.callSign || user.displayName || 'Scholar';
+      }
+    } else {
+      if (googleAuthBtn) googleAuthBtn.style.display = 'inline-flex';
+      if (userProfileChip) userProfileChip.classList.add('hidden');
+    }
+  }
+
+  if (googleAuthBtn) {
+    googleAuthBtn.addEventListener('click', async () => {
+      try {
+        googleAuthBtn.disabled = true;
+        googleAuthBtn.innerHTML = '<span>⏳ Signing in...</span>';
+        const user = await window.FirebaseSync.signInWithGoogle();
+        updateAuthUI(user);
+        showToast(`✓ Welcome, ${user.callSign || user.displayName}! Verified profile synced.`);
+      } catch (err) {
+        console.warn('[Auth] Sign-in error:', err);
+        showToast('Google Sign-In cancelled or unavailable.');
+      } finally {
+        googleAuthBtn.disabled = false;
+        googleAuthBtn.innerHTML = '<span id="auth-btn-icon">🌐</span> <span id="auth-btn-label">Sign in</span>';
+      }
+    });
+  }
+
+  window.FirebaseSync.onAuth(updateAuthUI);
 
   // 4. Picture-in-Picture Swap
   const pipSwapBtn = document.getElementById('btn-pip-swap');

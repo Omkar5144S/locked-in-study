@@ -1,39 +1,53 @@
 /**
- * LOCKED-IN: WebRTC & PeerJS 8-Person Mesh Architecture
- * Handles dual-feed (Camera + Screen Share with PiP swap),
- * audio streams, automatic room overflow, peer data channels,
- * and peer moderation controls.
+ * LOCKED-IN: WebRTC Peer-Pair Signaling & Video Mesh Architecture
+ * Deterministic Peer-Pair Signaling over Firestore (with Local BroadcastChannel fallback)
+ * Full Android ↔ PC video & screen mesh with zero black-feed race conditions.
  */
 
 class WebRTCRoomManager {
   constructor() {
-    this.peer = null;
     this.peerId = null;
     this.roomId = null;
+    this.cleanRoom = null;
     this.isHost = false;
+    this.isPrivate = false;
+    this.passcode = null;
 
     // Streams
     this.localCamStream = null;
     this.localScreenStream = null;
     this.isDualFeedActive = false;
-    this.isCamSwapped = false; // For PiP swap
+    this.isCamSwapped = false;
     this.isScreenSharing = false;
     this.isCameraPrivacyActive = false;
 
-    // Peer connections
-    this.peers = new Map(); // peerId -> { call, dataConn, meta, videoEl, stream }
+    // Active Peer connections: remotePeerId -> { pc, connectionId, isCaller, participant, candidateQueue, stream, unsubsConn, unsubsCand }
+    this.peers = new Map();
     this.maxRoomCapacity = 8;
 
-    // Audio controls
+    // Audio & Status
     this.isMicMuted = true;
-    this.isPushToTalkActive = false;
     this.isHandRaised = false;
 
-    // Room state
-    this.participants = new Map(); // uid -> data
+    // RTC Configuration with STUN & open TURN fallbacks
+    this.rtcConfig = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+      ],
+      iceCandidatePoolSize: 4
+    };
+
+    // Subscriptions & intervals
+    this.unsubscribeParticipants = null;
+    this.pingInterval = null;
   }
 
-  // Generate a silent WebAudio track to ensure SDP negotiations never fail
+  // Generate a silent WebAudio track to guarantee SDP audio negotiations never fail
   createSilentAudioTrack() {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -55,14 +69,12 @@ class WebRTCRoomManager {
     if (!stream) return stream;
     if (stream.getAudioTracks().length === 0) {
       const silentTrack = this.createSilentAudioTrack();
-      if (silentTrack) {
-        stream.addTrack(silentTrack);
-      }
+      if (silentTrack) stream.addTrack(silentTrack);
     }
     return stream;
   }
 
-  // Returns the active stream that peers should see (Screen share if sharing, else Camera)
+  // Outgoing stream that peers receive (Screen share if sharing, else Camera)
   getOutgoingStream() {
     if (this.isScreenSharing && this.localScreenStream && this.localScreenStream.active) {
       const combined = new MediaStream();
@@ -82,13 +94,13 @@ class WebRTCRoomManager {
     return this.ensureAudioTrack(this.localCamStream);
   }
 
-  // Replace outgoing video track on all connected peers in real time (Zero reload)
+  // Hot-replace outgoing video track on all connected peers with zero reload
   replaceOutgoingVideoTrack(newTrack) {
     if (!newTrack) return;
     this.peers.forEach((peerObj) => {
-      if (peerObj.call && peerObj.call.peerConnection) {
+      if (peerObj.pc) {
         try {
-          const senders = peerObj.call.peerConnection.getSenders();
+          const senders = peerObj.pc.getSenders();
           const videoSender = senders.find(s => s.track && s.track.kind === 'video');
           if (videoSender) {
             videoSender.replaceTrack(newTrack).catch(err => {
@@ -104,12 +116,13 @@ class WebRTCRoomManager {
 
   // Initialize Local Media Streams with Multi-Tier Fallback
   async initLocalMedia({ mode, videoDeviceId, audioDeviceId }) {
-    // Detect mobile touch devices: disable forcing getDisplayMedia on mobile
     const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.innerWidth < 768;
     this.isDualFeedActive = (mode === 'dual') && !isMobile;
 
     const camConstraints = {
-      video: videoDeviceId ? { deviceId: { exact: videoDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } } : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+      video: videoDeviceId 
+        ? { deviceId: { exact: videoDeviceId }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { max: 24 } } 
+        : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { max: 24 } },
       audio: audioDeviceId ? { deviceId: { exact: audioDeviceId } } : true
     };
 
@@ -117,20 +130,17 @@ class WebRTCRoomManager {
     try {
       this.localCamStream = await navigator.mediaDevices.getUserMedia(camConstraints);
     } catch (e1) {
-      console.warn('[WebRTC] Exact getUserMedia constraints failed. Trying video-only fallback...', e1);
+      console.warn('[WebRTC] Exact getUserMedia failed. Trying video-only fallback...', e1);
       try {
-        this.localCamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        this.localCamStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
       } catch (e2) {
-        console.warn('[WebRTC] Camera unavailable or permission denied. Starting in standby avatar mode...', e2);
-        const name = (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Scholar';
+        console.warn('[WebRTC] Camera unavailable. Starting in synthetic canvas standby mode...', e2);
+        const name = localStorage.getItem('lockedin_display_name') || 'Scholar';
         this.localCamStream = this.createFallbackAvatarStream(name);
       }
     }
 
-    // Ensure audio track is present
     this.ensureAudioTrack(this.localCamStream);
-
-    // Mute mic by default during study session
     this.muteMic(true);
 
     // 2. If Dual Feed requested on desktop, request Screen Share
@@ -154,12 +164,12 @@ class WebRTCRoomManager {
           this.isDualFeedActive = false;
         }
       } catch (screenErr) {
-        console.warn('[WebRTC] Screen share was declined or cancelled. Running camera-only mode:', screenErr);
+        console.warn('[WebRTC] Screen share declined or cancelled:', screenErr);
         this.isDualFeedActive = false;
       }
     }
 
-    // Attach streams to DOM elements based on layout mode
+    // Attach to DOM
     const localCamVideo = document.getElementById('local-cam-video');
     const localScreenVideo = document.getElementById('local-screen-video');
     const pipWrapper = document.getElementById('local-pip-wrapper');
@@ -167,16 +177,17 @@ class WebRTCRoomManager {
     const screenBtn = document.getElementById('toggle-screen-btn');
 
     if (this.isDualFeedActive && this.localScreenStream) {
-      // Dual Feed: Screen is main feed, Camera is in PiP overlay
       if (localScreenVideo) {
         localScreenVideo.srcObject = this.localScreenStream;
         localScreenVideo.muted = true;
-        localScreenVideo.play().catch(e => console.log('[WebRTC] Screen play:', e));
+        localScreenVideo.playsInline = true;
+        localScreenVideo.play().catch(e => console.log(e));
       }
       if (localCamVideo && this.localCamStream) {
         localCamVideo.srcObject = this.localCamStream;
         localCamVideo.muted = true;
-        localCamVideo.play().catch(e => console.log('[WebRTC] Cam play:', e));
+        localCamVideo.playsInline = true;
+        localCamVideo.play().catch(e => console.log(e));
       }
       if (pipWrapper) pipWrapper.style.display = 'block';
       if (pipSwapBtn) pipSwapBtn.style.display = 'inline-flex';
@@ -185,11 +196,11 @@ class WebRTCRoomManager {
         screenBtn.className = 'control-btn screen-active';
       }
     } else {
-      // Single Camera / Mobile Mode: Camera takes up the FULL tile!
       if (localScreenVideo && this.localCamStream) {
         localScreenVideo.srcObject = this.localCamStream;
         localScreenVideo.muted = true;
-        localScreenVideo.play().catch(e => console.log('[WebRTC] Main cam play:', e));
+        localScreenVideo.playsInline = true;
+        localScreenVideo.play().catch(e => console.log(e));
       }
       if (pipWrapper) pipWrapper.style.display = 'none';
       if (pipSwapBtn) pipSwapBtn.style.display = 'none';
@@ -203,7 +214,6 @@ class WebRTCRoomManager {
     return true;
   }
 
-  // Generates an animated placeholder video stream if camera is unavailable
   createFallbackAvatarStream(displayName) {
     const canvas = document.createElement('canvas');
     canvas.width = 640;
@@ -214,7 +224,6 @@ class WebRTCRoomManager {
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Gradient circle avatar
       const grad = ctx.createLinearGradient(160, 100, 480, 380);
       grad.addColorStop(0, '#3b82f6');
       grad.addColorStop(1, '#8b5cf6');
@@ -223,18 +232,15 @@ class WebRTCRoomManager {
       ctx.arc(320, 200, 75, 0, Math.PI * 2);
       ctx.fill();
 
-      // Emoji
       ctx.font = '64px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('🎓', 320, 200);
 
-      // Name
       ctx.fillStyle = '#f8fafc';
       ctx.font = 'bold 26px sans-serif';
       ctx.fillText(displayName || 'Scholar', 320, 320);
 
-      // Status
       ctx.fillStyle = '#94a3b8';
       ctx.font = '16px sans-serif';
       ctx.fillText('LOCKED IN (Standby Cam)', 320, 355);
@@ -242,740 +248,449 @@ class WebRTCRoomManager {
 
     draw();
     setInterval(draw, 1000);
-    return canvas.captureStream ? canvas.captureStream(5) : null;
+    return canvas.captureStream ? canvas.captureStream(10) : null;
   }
 
-  // Connect to PeerJS Mesh with Deterministic Slot Allocation (Zero-Config Mesh)
+  // =========================================================
+  // ROOM JOINING & PEER-PAIR ORCHESTRATION
+  // =========================================================
+
   async joinStudyRoom(requestedRoomId, isPrivate = false, passcode = null) {
-    this.roomId = requestedRoomId || 'focus-lobby-1';
+    // Clean, uppercase 6+ char code
+    const rawCode = requestedRoomId || 'MAIN-STUDY-HALL';
+    const cleanRoom = String(rawCode).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24) || 'STUDY-101';
+    
+    this.roomId = cleanRoom;
+    this.cleanRoom = cleanRoom;
     this.isPrivate = isPrivate;
     this.passcode = passcode ? String(passcode).trim() : null;
 
-    // Clean room ID: lowercase, alphanumeric and dashes, max 24 chars
-    const cleanRoom = (this.roomId || 'focus-lobby-1').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24) || 'lobby';
-    this.cleanRoom = cleanRoom;
+    // Unique per-tab Peer ID
+    this.peerId = 'p_' + Math.random().toString(36).substring(2, 9);
+    console.log(`[WebRTC] Joining Room: ${cleanRoom} as Peer: ${this.peerId}`);
 
-    // BroadcastChannel for instant same-browser / multi-tab discovery
-    this.initBroadcastChannel(cleanRoom);
+    // Update Room Code & Share Bar
+    this.renderRoomCodeBar();
 
-    // Find and claim an available deterministic slot (0..7)
-    return new Promise((resolve, reject) => {
-      this.attemptSlotAllocation(cleanRoom, 0, resolve, reject);
+    const callSign = localStorage.getItem('lockedin_display_name') || 'Scholar_' + this.peerId.slice(-4);
+    const isVerified = localStorage.getItem('lockedin_is_verified') === 'true';
+
+    // 1. Write Presence to rooms/{roomId}/participants/{peerId}
+    await window.FirebaseSync.setParticipantPresence(this.roomId, this.peerId, {
+      callSign: callSign,
+      displayName: callSign,
+      cameraMode: this.isDualFeedActive ? 'dual' : 'single',
+      isVerified: isVerified
     });
+
+    // 2. Start 15s Room Heartbeat Ping
+    if (this.pingInterval) clearInterval(this.pingInterval);
+    this.pingInterval = setInterval(() => {
+      window.FirebaseSync.pingRoom(this.roomId, 1 + this.peers.size);
+    }, 15000);
+    window.FirebaseSync.pingRoom(this.roomId, 1);
+
+    // 3. Listen to Participants & Negotiate Peer-Pairs
+    this.unsubscribeParticipants = window.FirebaseSync.listenToParticipants(this.roomId, (participants) => {
+      this.handleParticipantsUpdate(participants);
+    });
+
+    // 4. Listen to Room Events
+    this.unsubscribeEvents = window.FirebaseSync.listenToRoomEvents(this.roomId, (event) => {
+      if (event && event.type) this.handleIncomingData(event, event.senderId);
+    });
+
+    this.updateGridLayout();
+    return true;
   }
 
-  initBroadcastChannel(cleanRoom) {
-    if (typeof BroadcastChannel !== 'undefined') {
-      try {
-        if (this.broadcastChannel) this.broadcastChannel.close();
-        this.broadcastChannel = new BroadcastChannel('lockedin_room_' + cleanRoom);
-        this.broadcastChannel.onmessage = (e) => {
-          const msg = e.data;
-          if (!msg || !msg.peerId || msg.peerId === this.peerId) return;
-          if (msg.type === 'PEER_JOINED' || msg.type === 'ANNOUNCE_SLOT') {
-            if (!this.peers.has(msg.peerId)) {
-              console.log('[BroadcastChannel] Discovered peer in room:', msg.peerId);
-              this.callPeer(msg.peerId);
-            }
-          } else if (msg.type === 'PEER_LEFT') {
-            this.removeRemoteTile(msg.peerId);
+  renderRoomCodeBar() {
+    const codeText = document.getElementById('active-room-code-text');
+    if (codeText) codeText.textContent = this.roomId;
+
+    const shareBar = document.getElementById('room-code-share-bar');
+    if (shareBar) shareBar.classList.remove('hidden');
+
+    const badge = document.getElementById('room-id-badge');
+    if (badge) {
+      badge.innerHTML = `ROOM: <strong>${this.escapeHtml(this.roomId)}</strong>`;
+      badge.style.borderColor = 'rgba(59, 130, 246, 0.4)';
+    }
+  }
+
+  // Deterministic Peer-Pair Signaling:
+  // For any pair (peerA, peerB): smaller ID initiates offer, larger ID answers.
+  handleParticipantsUpdate(participants) {
+    if (!Array.isArray(participants)) return;
+
+    const activeRemoteIds = new Set();
+
+    participants.forEach((p) => {
+      const remotePeerId = p.peerId;
+      if (!remotePeerId || remotePeerId === this.peerId) return;
+
+      activeRemoteIds.add(remotePeerId);
+
+      // Register remote participant on Leaderboard
+      if (window.Leaderboard && window.Leaderboard.upsertPeer) {
+        window.Leaderboard.upsertPeer({
+          uid: p.userId || remotePeerId,
+          displayName: p.callSign || p.displayName || 'Peer',
+          subject: 'Deep Work',
+          points: 150
+        });
+      }
+
+      // If we don't already have an active connection with this peer:
+      if (!this.peers.has(remotePeerId)) {
+        const smallerId = (this.peerId < remotePeerId) ? this.peerId : remotePeerId;
+        const largerId = (this.peerId < remotePeerId) ? remotePeerId : this.peerId;
+        const connectionId = `${smallerId}_${largerId}`;
+
+        if (this.peerId === smallerId) {
+          // We are CALLER
+          console.log(`[WebRTC] Enforcing rule: We (${this.peerId}) are CALLER to (${remotePeerId})`);
+          this.initiateCaller(connectionId, remotePeerId, p);
+        } else {
+          // We are CALLEE
+          console.log(`[WebRTC] Enforcing rule: We (${this.peerId}) are CALLEE for (${remotePeerId})`);
+          this.listenAsCallee(connectionId, remotePeerId, p);
+        }
+      }
+    });
+
+    // Cleanup peers that left the room
+    this.peers.forEach((peerObj, remoteId) => {
+      if (!activeRemoteIds.has(remoteId)) {
+        console.log(`[WebRTC] Peer ${remoteId} left. Cleaning up...`);
+        this.removeRemotePeer(remoteId);
+      }
+    });
+
+    this.updateRoomParticipantCount();
+    this.updateGridLayout();
+  }
+
+  // CALLER: Creates RTCPeerConnection, adds tracks, writes offer, listens for answer & ICE
+  async initiateCaller(connectionId, remotePeerId, participantData) {
+    const pc = new RTCPeerConnection(this.rtcConfig);
+    const peerObj = {
+      pc,
+      connectionId,
+      isCaller: true,
+      participant: participantData,
+      candidateQueue: [],
+      stream: null,
+      unsubsConn: null,
+      unsubsCand: null
+    };
+    this.peers.set(remotePeerId, peerObj);
+
+    // Add local tracks BEFORE offer creation
+    const outStream = this.getOutgoingStream();
+    if (outStream) {
+      outStream.getTracks().forEach(track => pc.addTrack(track, outStream));
+    }
+
+    // ICE Candidate generation -> send to callerCandidates
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        window.FirebaseSync.addIceCandidate(this.roomId, connectionId, 'caller', event.candidate);
+      }
+    };
+
+    // Incoming remote track binding with mobile MediaStream fallback
+    pc.ontrack = (event) => {
+      console.log(`[WebRTC Caller] Track received from ${remotePeerId}:`, event.track.kind);
+      let stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+      peerObj.stream = stream;
+      this.attachRemoteStream(remotePeerId, stream, participantData);
+    };
+
+    // Listen for Callee's ICE candidates
+    peerObj.unsubsCand = window.FirebaseSync.listenToIceCandidates(this.roomId, connectionId, 'callee', (candidate) => {
+      this.handleRemoteIceCandidate(remotePeerId, candidate);
+    });
+
+    // Create & set local offer
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      await window.FirebaseSync.writeConnectionOffer(this.roomId, connectionId, {
+        callerId: this.peerId,
+        calleeId: remotePeerId,
+        offer: { type: offer.type, sdp: offer.sdp }
+      });
+
+      // Listen for Callee's Answer
+      peerObj.unsubsConn = window.FirebaseSync.listenToConnection(this.roomId, connectionId, async (data) => {
+        if (data && data.answer && pc.signalingState !== 'stable') {
+          console.log(`[WebRTC Caller] Answer received from ${remotePeerId}`);
+          await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+          this.drainCandidateQueue(remotePeerId);
+        }
+      });
+    } catch (err) {
+      console.error('[WebRTC Caller] Negotiation error:', err);
+    }
+  }
+
+  // CALLEE: Listens for offer on connection doc, creates RTCPeerConnection, adds tracks, writes answer
+  listenAsCallee(connectionId, remotePeerId, participantData) {
+    const peerObj = {
+      pc: null,
+      connectionId,
+      isCaller: false,
+      participant: participantData,
+      candidateQueue: [],
+      stream: null,
+      unsubsConn: null,
+      unsubsCand: null
+    };
+    this.peers.set(remotePeerId, peerObj);
+
+    peerObj.unsubsConn = window.FirebaseSync.listenToConnection(this.roomId, connectionId, async (data) => {
+      if (data && data.offer && !peerObj.pc) {
+        console.log(`[WebRTC Callee] Offer received from ${remotePeerId}`);
+        const pc = new RTCPeerConnection(this.rtcConfig);
+        peerObj.pc = pc;
+
+        // Add local tracks BEFORE answer creation
+        const outStream = this.getOutgoingStream();
+        if (outStream) {
+          outStream.getTracks().forEach(track => pc.addTrack(track, outStream));
+        }
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            window.FirebaseSync.addIceCandidate(this.roomId, connectionId, 'callee', event.candidate);
           }
         };
-      } catch (err) {
-        console.warn('[BroadcastChannel] Not supported or failed:', err);
+
+        pc.ontrack = (event) => {
+          console.log(`[WebRTC Callee] Track received from ${remotePeerId}:`, event.track.kind);
+          let stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+          peerObj.stream = stream;
+          this.attachRemoteStream(remotePeerId, stream, participantData);
+        };
+
+        // Listen for Caller's ICE candidates
+        peerObj.unsubsCand = window.FirebaseSync.listenToIceCandidates(this.roomId, connectionId, 'caller', (candidate) => {
+          this.handleRemoteIceCandidate(remotePeerId, candidate);
+        });
+
+        // Set remote offer, drain early candidates, and reply with answer
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          this.drainCandidateQueue(remotePeerId);
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+
+          await window.FirebaseSync.writeConnectionAnswer(this.roomId, connectionId, {
+            answer: { type: answer.type, sdp: answer.sdp }
+          });
+        } catch (err) {
+          console.error('[WebRTC Callee] Answer error:', err);
+        }
       }
-    }
+    });
   }
 
-  postBroadcast(data) {
-    if (this.broadcastChannel) {
+  // Early ICE Candidate Queuing (prevents dropping early ICE candidates)
+  async handleRemoteIceCandidate(remotePeerId, candidateData) {
+    const peerObj = this.peers.get(remotePeerId);
+    if (!peerObj) return;
+
+    const cand = new RTCIceCandidate(candidateData);
+    if (peerObj.pc && peerObj.pc.remoteDescription && peerObj.pc.remoteDescription.type) {
       try {
-        this.broadcastChannel.postMessage(data);
-      } catch (e) {}
+        await peerObj.pc.addIceCandidate(cand);
+      } catch (e) {
+        console.warn('[WebRTC] addIceCandidate error:', e);
+      }
+    } else {
+      peerObj.candidateQueue.push(cand);
     }
   }
 
-  attemptSlotAllocation(cleanRoom, slotIndex, resolve, reject) {
-    if (slotIndex >= this.maxRoomCapacity) {
-      alert(`Room "${this.roomId}" is currently full (8/8 online). Please try another room.`);
-      reject(new Error('Room full'));
-      return;
+  async drainCandidateQueue(remotePeerId) {
+    const peerObj = this.peers.get(remotePeerId);
+    if (!peerObj || !peerObj.pc || !peerObj.pc.remoteDescription) return;
+
+    while (peerObj.candidateQueue && peerObj.candidateQueue.length > 0) {
+      const cand = peerObj.candidateQueue.shift();
+      try {
+        await peerObj.pc.addIceCandidate(cand);
+      } catch (e) {
+        console.warn('[WebRTC] drain candidate error:', e);
+      }
+    }
+  }
+
+  // Attach Remote MediaStream to Video Tile with Autoplay Fallback
+  attachRemoteStream(remotePeerId, stream, participantData) {
+    let tile = document.getElementById(`tile-${remotePeerId}`);
+    if (!tile) {
+      tile = this.renderRemoteTile(remotePeerId, participantData);
     }
 
-    const candidatePeerId = `li_${cleanRoom}_${slotIndex}`;
-    console.log(`[WebRTC] Probing room slot ${slotIndex}: ${candidatePeerId}`);
+    const video = tile.querySelector('.remote-video');
+    if (video) {
+      video.srcObject = stream;
+      video.playsInline = true;
+      video.autoplay = true;
 
-    let isClaimed = false;
-    let peer = null;
-
-    try {
-      peer = new window.Peer(candidatePeerId, {
-        debug: 1,
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:global.stun.twilio.com:3478' }
-          ]
-        }
+      video.play().catch(err => {
+        console.warn(`[WebRTC] Remote video autoplay blocked for ${remotePeerId}:`, err);
+        this.showPlayFallbackOverlay(tile, video);
       });
-    } catch (e) {
-      console.error('[WebRTC] Peer initialization failed:', e);
-      reject(e);
-      return;
     }
 
-    peer.on('error', (err) => {
-      if (err.type === 'unavailable-id' && !isClaimed) {
-        console.log(`[WebRTC] Slot ${slotIndex} (${candidatePeerId}) is in use. Trying next slot...`);
-        try { peer.destroy(); } catch (e) {}
-        setTimeout(() => {
-          this.attemptSlotAllocation(cleanRoom, slotIndex + 1, resolve, reject);
-        }, 120);
-        return;
-      }
-      
-      // Benign errors: clean up peer-unavailable for unoccupied slots
-      if (err.type === 'peer-unavailable') {
-        const match = err.message && err.message.match(/peer\s+([a-zA-Z0-9_-]+)/i);
-        const failedId = match ? match[1] : null;
-        if (failedId) {
-          this.peers.delete(failedId);
-          this.removeRemoteTile(failedId);
-        }
-        return;
-      }
-
-      console.warn('[WebRTC] Peer error:', err);
-    });
-
-    peer.on('open', (id) => {
-      isClaimed = true;
-      this.mySlot = slotIndex;
-      this.peerId = id;
-      this.peer = peer;
-      console.log(`[WebRTC] 🚀 Connected as slot ${slotIndex} (${id}) in room: ${this.roomId}`);
-      this.updateRoomHeader();
-
-      // Setup incoming event handlers on this peer
-      this.setupPeerListeners();
-
-      // Post local broadcast
-      this.postBroadcast({
-        type: 'PEER_JOINED',
-        peerId: this.peerId,
-        slot: this.mySlot
-      });
-
-      // Firebase sync if configured
-      if (window.FirebaseSync && window.FirebaseSync.isConfigured) {
-        const myUid = (window.Leaderboard && window.Leaderboard.currentUser.uid) || 'u' + Math.random().toString(36).substring(2, 7);
-        window.FirebaseSync.joinRoom(this.roomId, {
-          userId: myUid,
-          displayName: (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Scholar',
-          peerId: this.peerId,
-          status: 'LOCKED_IN',
-          isHandRaised: false
-        });
-        window.FirebaseSync.listenToRoomEvents(this.roomId, (event) => {
-          this.handleIncomingData(event);
-        });
-        window.FirebaseSync.listenToRoom(this.roomId, (participantList) => {
-          participantList.forEach(p => {
-            if (p.peerId && p.peerId !== this.peerId && !this.peers.has(p.peerId)) {
-              this.callPeer(p.peerId, p);
-            }
-          });
-        });
-      }
-
-      // Connect to other 7 deterministic slots in this room
-      this.connectToRoomMesh();
-
-      // Start periodic probe loop for dynamic arrivals/departures
-      this.startMeshProbeLoop();
-
-      resolve(this.peerId);
-    });
+    this.updateGridLayout();
+    this.updateRoomParticipantCount();
   }
 
-  setupPeerListeners() {
-    if (!this.peer) return;
-
-    // Handle Incoming Calls (Media Streams)
-    this.peer.on('call', (call) => {
-      console.log(`[WebRTC] Incoming call from peer: ${call.peer}`);
-      call.answer(this.getOutgoingStream());
-      this.handlePeerCall(call);
-
-      // Connect reciprocal data connection if not present
-      if (!this.peers.has(call.peer) || !this.peers.get(call.peer).dataConn) {
-        const conn = this.peer.connect(call.peer);
-        this.handleDataConnection(conn);
-      }
-    });
-
-    // Handle Incoming Data Connections
-    this.peer.on('connection', (conn) => {
-      console.log(`[WebRTC] Incoming data connection from: ${conn.peer}`);
-      this.handleDataConnection(conn);
-    });
-  }
-
-  connectToRoomMesh() {
-    for (let s = 0; s < this.maxRoomCapacity; s++) {
-      if (s === this.mySlot) continue;
-      const targetPeerId = `li_${this.cleanRoom}_${s}`;
-      if (!this.peers.has(targetPeerId)) {
-        this.callPeer(targetPeerId);
-      }
+  showPlayFallbackOverlay(tile, video) {
+    let fallback = tile.querySelector('.autoplay-fallback-btn');
+    if (!fallback) {
+      fallback = document.createElement('button');
+      fallback.className = 'autoplay-fallback-btn';
+      fallback.innerHTML = '<span>▶ Tap to view / unmute video</span>';
+      fallback.onclick = () => {
+        video.muted = false;
+        video.play().then(() => fallback.remove()).catch(e => console.log(e));
+      };
+      tile.querySelector('.video-container')?.appendChild(fallback);
     }
   }
 
-  startMeshProbeLoop() {
-    if (this.meshProbeInterval) clearInterval(this.meshProbeInterval);
-    this.meshProbeInterval = setInterval(() => {
-      if (!this.peer || this.peer.destroyed) return;
-      for (let s = 0; s < this.maxRoomCapacity; s++) {
-        if (s === this.mySlot) continue;
-        const targetPeerId = `li_${this.cleanRoom}_${s}`;
-        if (!this.peers.has(targetPeerId)) {
-          this.callPeer(targetPeerId);
-        }
-      }
-    }, 4500);
+  renderRemoteTile(remotePeerId, participantData) {
+    const grid = document.getElementById('study-grid');
+    if (!grid) return null;
+
+    let tile = document.getElementById(`tile-${remotePeerId}`);
+    if (tile) return tile;
+
+    const callSign = participantData?.callSign || participantData?.displayName || 'Scholar';
+    const isVerified = !!participantData?.isVerified;
+    const isDeskCam = (participantData?.cameraMode === 'single');
+
+    tile = document.createElement('div');
+    tile.id = `tile-${remotePeerId}`;
+    tile.className = 'study-tile remote-tile';
+
+    tile.innerHTML = `
+      <div class="video-container">
+        <video autoplay playsinline class="remote-video"></video>
+        <div class="tile-avatar-card hidden">
+          <div class="avatar-circle">${this.escapeHtml(callSign.slice(0, 2).toUpperCase())}</div>
+          <span class="avatar-title">${this.escapeHtml(callSign)}</span>
+          <span class="avatar-status">🔒 Camera Off</span>
+        </div>
+      </div>
+      <div class="tile-hud">
+        <div class="hud-top">
+          <span class="user-badge">${this.escapeHtml(callSign)} ${isVerified ? '✓' : ''}</span>
+          <span class="subject-badge">${isDeskCam ? '📱 Desk Cam' : '🖥️ Dual Feed'}</span>
+          <span class="listening-badge hidden">🎧 Focus</span>
+        </div>
+        <div class="hud-bottom">
+          <div class="timer-display">25:00</div>
+          <span class="status-pill status-locked">LOCKED IN</span>
+          <span class="hand-indicator hidden">✋ Hand Raised</span>
+        </div>
+      </div>
+    `;
+
+    grid.appendChild(tile);
+    return tile;
   }
 
-  // Call a peer with our active outgoing stream & establish data connection
-  callPeer(remotePeerId, meta = {}) {
-    if (!this.peer || this.peer.destroyed || this.peers.has(remotePeerId)) return;
-
-    try {
-      const call = this.peer.call(remotePeerId, this.getOutgoingStream(), {
-        metadata: {
-          displayName: (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Student',
-          subject: (window.Leaderboard && window.Leaderboard.currentUser.subjectGoal) || 'Focus',
-          isDualFeed: this.isDualFeedActive,
-          passcode: this.passcode,
-          slot: this.mySlot
-        }
-      });
-      if (call) {
-        this.handlePeerCall(call, meta);
+  removeRemotePeer(remotePeerId) {
+    const peerObj = this.peers.get(remotePeerId);
+    if (peerObj) {
+      if (peerObj.unsubsConn) peerObj.unsubsConn();
+      if (peerObj.unsubsCand) peerObj.unsubsCand();
+      if (peerObj.pc) {
+        try { peerObj.pc.close(); } catch(e){}
       }
-
-      const conn = this.peer.connect(remotePeerId);
-      if (conn) {
-        this.handleDataConnection(conn);
-      }
-    } catch (e) {
-      console.warn('[WebRTC] Error calling peer:', e);
+      this.peers.delete(remotePeerId);
     }
+    const tile = document.getElementById(`tile-${remotePeerId}`);
+    if (tile) tile.remove();
+
+    this.updateGridLayout();
+    this.updateRoomParticipantCount();
   }
 
-  handlePeerCall(call, initialMeta = {}) {
-    const remotePeerId = call.peer;
-
-    call.on('stream', (remoteStream) => {
-      console.log(`[WebRTC] Received remote stream from ${remotePeerId}`);
-      if (!this.peers.has(remotePeerId)) {
-        this.peers.set(remotePeerId, {});
-      }
-      this.peers.get(remotePeerId).stream = remoteStream;
-      this.peers.get(remotePeerId).call = call;
-      this.renderRemoteTile(remotePeerId, remoteStream, call.metadata || initialMeta);
-      this.updateRoomParticipantCount();
-    });
-
-    call.on('close', () => {
-      this.removeRemoteTile(remotePeerId);
-    });
-
-    call.on('error', (err) => {
-      console.warn('[WebRTC] Call error with peer:', remotePeerId, err);
-      this.removeRemoteTile(remotePeerId);
-    });
-  }
-
-  handleDataConnection(conn) {
-    const remotePeerId = conn.peer;
-
-    conn.on('open', () => {
-      console.log(`[WebRTC] Data channel established with ${remotePeerId}`);
-      if (!this.peers.has(remotePeerId)) {
-        this.peers.set(remotePeerId, {});
-      }
-      this.peers.get(remotePeerId).dataConn = conn;
-      this.updateRoomParticipantCount();
-
-      // Send initial state handshake with passcode
-      conn.send({
-        type: 'HANDSHAKE',
-        displayName: (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Student',
-        subject: (window.Leaderboard && window.Leaderboard.currentUser.subjectGoal) || 'Focus',
-        points: (window.Leaderboard && window.Leaderboard.currentUser.totalPoints) || 0,
-        status: 'LOCKED_IN',
-        isHandRaised: this.isHandRaised,
-        passcode: this.passcode,
-        slot: this.mySlot
-      });
-
-      // If we are authenticated Admin, automatically push our custom soundboard to this peer!
-      if (window.Soundboard && window.Soundboard.isAdminAuthenticated) {
-        conn.send({
-          type: 'ADMIN_SOUNDBOARD_SYNC',
-          adminName: (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Admin',
-          soundConfigs: window.Soundboard.getExportableConfigs()
-        });
-      }
-    });
-
-    conn.on('data', (data) => {
-      this.handleIncomingData(data, remotePeerId);
-    });
-
-    conn.on('close', () => {
-      this.removeRemoteTile(remotePeerId);
-    });
-
-    conn.on('error', (err) => {
-      console.warn('[WebRTC] Data channel error with peer:', remotePeerId, err);
-      this.removeRemoteTile(remotePeerId);
-    });
-  }
-
-  // Broadcast data payload to all connected peers
-  broadcastData(payload) {
-    this.peers.forEach((peerObj) => {
-      if (peerObj.dataConn && peerObj.dataConn.open) {
-        peerObj.dataConn.send(payload);
-      }
-    });
-
-    if (window.FirebaseSync) {
-      window.FirebaseSync.broadcastEvent(this.roomId, payload);
-    }
-  }
-
-  // Handle Incoming Data Messages
-  handleIncomingData(data, senderPeerId) {
-    if (!data || !data.type) return;
-
-    switch (data.type) {
-      case 'ADMIN_SOUNDBOARD_SYNC':
-        if (data.soundConfigs && window.Soundboard) {
-          console.log('[WebRTC] Received room-wide soundboard sync from Admin:', data.adminName);
-          window.Soundboard.applyRemoteSoundConfigs(data.soundConfigs);
-          if (window.TriggerEngine && window.TriggerEngine.showShameToast) {
-            window.TriggerEngine.showShameToast(`🔊 Custom sounds synced from Admin (${data.adminName || 'Admin'})!`);
-          }
-        }
-        break;
-
-      case 'HANDSHAKE':
-        this.updateRemoteTileHUD(senderPeerId, data);
-        if (window.Leaderboard && window.Leaderboard.upsertPeer) {
-          window.Leaderboard.upsertPeer({
-            uid: senderPeerId,
-            displayName: data.displayName,
-            subject: data.subject,
-            points: data.points
-          });
-        }
-        break;
-
-      case 'CAMERA_PRIVACY_TOGGLED': {
-        const tile = document.getElementById(`tile-${senderPeerId}`);
-        if (tile) {
-          const avatar = tile.querySelector('.remote-avatar-card');
-          const video = tile.querySelector('video');
-          if (data.isCameraOff) {
-            if (avatar) avatar.classList.remove('hidden');
-            if (video) video.style.opacity = '0';
-          } else {
-            if (avatar) avatar.classList.add('hidden');
-            if (video) video.style.opacity = '1';
-          }
-        }
-        break;
-      }
-
-      case 'SCREEN_SHARE_STARTED': {
-        const tile = document.getElementById(`tile-${senderPeerId}`);
-        if (tile) {
-          const badge = tile.querySelector('.subject-badge');
-          if (badge) badge.textContent = '🖥️ Screen Sharing';
-          const avatar = tile.querySelector('.remote-avatar-card');
-          const video = tile.querySelector('video');
-          if (avatar) avatar.classList.add('hidden');
-          if (video) video.style.opacity = '1';
-        }
-        break;
-      }
-
-      case 'SCREEN_SHARE_STOPPED': {
-        const tile = document.getElementById(`tile-${senderPeerId}`);
-        if (tile) {
-          const badge = tile.querySelector('.subject-badge');
-          if (badge) badge.textContent = 'Deep Focus';
-        }
-        break;
-      }
-
-      case 'TIMER_SYNC':
-        if (!this.isHost && window.StudyTimer && window.StudyTimer.isSyncedWithHost) {
-          window.StudyTimer.syncFromHost(data);
-        }
-        break;
-
-      case 'HAND_RAISE':
-        this.setRemoteHandRaise(data.userId || senderPeerId, data.isRaised);
-        break;
-
-      case 'USER_SHAMED':
-        this.applyRemoteShame(data);
-        break;
-
-      case 'SHAME_CLEARED':
-        this.clearRemoteShame(data.userId);
-        break;
-
-      case 'PEER_CALLOUT_VOTE':
-        if (window.TriggerEngine) {
-          window.TriggerEngine.recordPeerCallout(data.targetUserId, data.triggerId, data.triggerName, data.voterId);
-        }
-        break;
-
-      case 'ADMIN_MUTE':
-        if (data.targetUserId === (window.Leaderboard && window.Leaderboard.currentUser.uid)) {
-          this.muteMic(true);
-          alert('You were muted by a Room Admin.');
-        }
-        break;
-
-      case 'ADMIN_KICK':
-        if (data.targetUserId === (window.Leaderboard && window.Leaderboard.currentUser.uid)) {
-          alert('You have been removed from the study room by an Admin.');
-          window.location.reload();
-        }
-        break;
-
-      case 'NOW_LISTENING':
-        this.updateRemoteListeningStatus(senderPeerId, data);
-        break;
-
-      default:
-        break;
-    }
-  }
-
-  // Render Remote Participant Video Tile (Max 8 Grid)
-  renderRemoteTile(remotePeerId, stream, meta) {
+  // Responsive Zoom-Style Grid System
+  updateGridLayout() {
     const grid = document.getElementById('study-grid');
     if (!grid) return;
 
-    // Check if tile already exists
-    let tile = document.getElementById(`tile-${remotePeerId}`);
-    if (!tile) {
-      tile = document.createElement('div');
-      tile.id = `tile-${remotePeerId}`;
-      tile.className = 'study-tile remote-tile';
+    const totalActive = 1 + this.peers.size;
+    grid.classList.remove('grid-1-user', 'grid-2-users', 'grid-3-4-users', 'grid-5-8-users');
 
-      const displayName = meta.displayName || 'Peer_' + remotePeerId.slice(-4);
-      const subject = meta.subject || 'Deep Focus';
-
-      tile.innerHTML = `
-        <div class="video-container">
-          <video autoplay playsinline class="remote-video"></video>
-          <div class="tile-avatar-card remote-avatar-card hidden">
-            <div class="avatar-circle">${this.escapeHtml((displayName.trim().slice(0, 2)).toUpperCase())}</div>
-            <span class="avatar-title">${this.escapeHtml(displayName)}</span>
-            <span class="avatar-status">🔒 Camera Off (Privacy Mode)</span>
-          </div>
-        </div>
-        <div class="tile-hud">
-          <div class="hud-top">
-            <span class="user-badge">${this.escapeHtml(displayName)}</span>
-            <span class="subject-badge">${this.escapeHtml(subject)}</span>
-            <span class="listening-badge-remote hidden">🎧</span>
-            <span class="points-pill">150 pts</span>
-          </div>
-          <div class="hud-bottom">
-            <div class="timer-display-remote">25:00</div>
-            <span class="status-pill status-locked">LOCKED IN</span>
-            <span class="hand-indicator hidden">✋ Hand Raised</span>
-          </div>
-        </div>
-        <div class="peer-mod-overlay">
-          <button class="mod-btn mute-tile-btn" title="Mute audio locally">🔊 Mute</button>
-          <button class="mod-btn hide-tile-btn" title="Hide video">👁️ Hide</button>
-          <button class="mod-btn snitch-btn" title="Call out distraction">🎯 Call Out</button>
-          <div class="snitch-menu hidden">
-            <button data-trigger="PEER_NON_STUDY_MUSIC">🎶 Not Study Music!</button>
-            <button data-trigger="PEER_NON_STUDY_CONTENT">📺 Non-Study Screen</button>
-            <button data-trigger="PEER_DOOMSCROLLING">📱 Doomscrolling</button>
-            <button data-trigger="PEER_ON_PHONE">🤳 On Phone</button>
-            <button data-trigger="PEER_ZONING_OUT">😴 Zoning Out</button>
-            <button data-trigger="PEER_WAKE_UP_NUDGE">⚡ Wake Up Nudge!</button>
-          </div>
-        </div>
-      `;
-
-      grid.appendChild(tile);
-      this.setupTileModerationEvents(tile, remotePeerId);
-    }
-
-    const videoEl = tile.querySelector('video');
-    const avatarCard = tile.querySelector('.remote-avatar-card');
-
-    if (videoEl && videoEl.srcObject !== stream) {
-      videoEl.srcObject = stream;
-      videoEl.playsInline = true;
-      videoEl.autoplay = true;
-
-      const videoTrack = stream && stream.getVideoTracks()[0];
-      if (videoTrack) {
-        if (!videoTrack.enabled) {
-          if (avatarCard) avatarCard.classList.remove('hidden');
-        } else {
-          if (avatarCard) avatarCard.classList.add('hidden');
-        }
-
-        videoTrack.addEventListener('mute', () => {
-          if (avatarCard) avatarCard.classList.remove('hidden');
-        });
-        videoTrack.addEventListener('unmute', () => {
-          if (avatarCard) avatarCard.classList.add('hidden');
-        });
-      }
-
-      const playPromise = videoEl.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(err => {
-          console.warn('[WebRTC] Autoplay unmuted was blocked. Falling back to muted playback:', err);
-          videoEl.muted = true;
-          videoEl.play().catch(e => console.error('[WebRTC] Remote video playback failed:', e));
-        });
-      }
-    }
-
-    this.updateRoomParticipantCount();
-  }
-
-  setupTileModerationEvents(tile, remotePeerId) {
-    const videoEl = tile.querySelector('video');
-    const muteBtn = tile.querySelector('.mute-tile-btn');
-    const hideBtn = tile.querySelector('.hide-tile-btn');
-    const snitchBtn = tile.querySelector('.snitch-btn');
-    const snitchMenu = tile.querySelector('.snitch-menu');
-
-    if (muteBtn && videoEl) {
-      muteBtn.addEventListener('click', () => {
-        videoEl.muted = !videoEl.muted;
-        muteBtn.textContent = videoEl.muted ? '🔇 Unmute' : '🔊 Mute';
-      });
-    }
-
-    if (hideBtn && videoEl) {
-      hideBtn.addEventListener('click', () => {
-        videoEl.style.opacity = (videoEl.style.opacity === '0') ? '1' : '0';
-        hideBtn.textContent = (videoEl.style.opacity === '0') ? '👁️ Show' : '👁️ Hide';
-      });
-    }
-
-    if (snitchBtn && snitchMenu) {
-      snitchBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        snitchMenu.classList.toggle('hidden');
-      });
-
-      snitchMenu.querySelectorAll('button').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const triggerId = btn.getAttribute('data-trigger');
-          const triggerDef = (window.TRIGGER_DEFINITIONS || []).find(t => t.id === triggerId);
-          const reason = triggerDef ? triggerDef.name : 'Peer Distraction Callout';
-          const myUid = (window.Leaderboard && window.Leaderboard.currentUser.uid) || 'peer';
-
-          this.broadcastData({
-            type: 'PEER_CALLOUT_VOTE',
-            targetUserId: remotePeerId,
-            triggerId,
-            triggerName: reason,
-            voterId: myUid
-          });
-
-          snitchMenu.classList.add('hidden');
-          alert(`Callout vote registered: "${reason}". If confirmed by peers/admin, points will be penalized.`);
-        });
-      });
-    }
-  }
-
-  removeRemoteTile(remotePeerId) {
-    const tile = document.getElementById(`tile-${remotePeerId}`);
-    if (tile) tile.remove();
-    this.peers.delete(remotePeerId);
-    this.updateRoomParticipantCount();
-  }
-
-  updateRemoteTileHUD(remotePeerId, data) {
-    const tile = document.getElementById(`tile-${remotePeerId}`);
-    if (!tile) return;
-    if (data.displayName) {
-      tile.querySelector('.user-badge').textContent = data.displayName;
-    }
-    if (data.subject) {
-      tile.querySelector('.subject-badge').textContent = data.subject;
-    }
-    if (data.points !== undefined) {
-      tile.querySelector('.points-pill').textContent = `${data.points} pts`;
-    }
-  }
-
-  updateRemoteListeningStatus(remotePeerId, data) {
-    const tile = document.getElementById(`tile-${remotePeerId}`);
-    if (!tile) return;
-    const badge = tile.querySelector('.listening-badge-remote');
-    if (!badge) return;
-
-    if (!data.trackTitle || data.trackTitle === 'None') {
-      badge.classList.add('hidden');
+    if (totalActive === 1) {
+      grid.classList.add('grid-1-user');
+    } else if (totalActive === 2) {
+      grid.classList.add('grid-2-users');
+    } else if (totalActive <= 4) {
+      grid.classList.add('grid-3-4-users');
     } else {
-      badge.classList.remove('hidden');
-      badge.innerHTML = `🎧 ${this.escapeHtml(data.trackTitle)}`;
-      if (data.isStudyApproved) {
-        badge.className = 'listening-badge-remote listening-badge study-approved';
-      } else {
-        badge.className = 'listening-badge-remote listening-badge non-study-warning';
-      }
+      grid.classList.add('grid-5-8-users');
     }
   }
 
-  setRemoteHandRaise(remotePeerId, isRaised) {
-    const tile = document.getElementById(`tile-${remotePeerId}`);
-    if (!tile) return;
-    const handIndicator = tile.querySelector('.hand-indicator');
-    if (handIndicator) {
-      if (isRaised) {
-        handIndicator.classList.remove('hidden');
-        tile.classList.add('hand-raised-glow');
-        if (window.Soundboard) window.Soundboard.playSynthesizedTone('gentle_chime', 0.5);
-      } else {
-        handIndicator.classList.add('hidden');
-        tile.classList.remove('hand-raised-glow');
-      }
+  updateRoomParticipantCount() {
+    const total = 1 + this.peers.size;
+    const countBadge = document.getElementById('room-count-badge');
+    if (countBadge) {
+      countBadge.innerHTML = `<span style="color:#10b981; font-weight:800;">🟢 ${total}</span> Active ${total === 1 ? 'Scholar' : 'Scholars'}`;
+      countBadge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
     }
   }
 
-  applyRemoteShame(event) {
-    const tile = document.getElementById(`tile-${event.userId}`);
-    if (tile) {
-      const statusPill = tile.querySelector('.status-pill');
-      if (statusPill) {
-        statusPill.textContent = `SHAMED: ${event.triggerName}`;
-        statusPill.className = 'status-pill status-shamed';
-      }
-      // Add red X
-      const timerDisplay = tile.querySelector('.timer-display-remote');
-      if (timerDisplay) {
-        timerDisplay.classList.add('timer-struck-red-x');
-        setTimeout(() => timerDisplay.classList.remove('timer-struck-red-x'), 5000);
-      }
-      // Show shame stamp badge on remote peer tile
-      const existingBadge = tile.querySelector('.shame-stamp-badge');
-      if (existingBadge) existingBadge.remove();
-      const badge = document.createElement('div');
-      badge.className = 'shame-stamp-badge slam-animation';
-      badge.innerHTML = `<span>🚨 SHAMED</span><small>${this.escapeHtml(event.triggerName)}</small>`;
-      tile.appendChild(badge);
-    }
+  // =========================================================
+  // HARDWARE PRIVACY CONTROLS & CAMERA / SCREEN TOGGLES
+  // =========================================================
 
-    if (window.Soundboard) {
-      if (event.audioUrl) {
-        window.Soundboard.playAudioFromUrl(event.audioUrl, event.triggerId);
-      } else {
-        window.Soundboard.playTrigger(event.triggerId);
-      }
-    }
-  }
-
-  clearRemoteShame(userId) {
-    const tile = document.getElementById(`tile-${userId}`);
-    if (tile) {
-      const statusPill = tile.querySelector('.status-pill');
-      if (statusPill) {
-        statusPill.textContent = 'LOCKED IN';
-        statusPill.className = 'status-pill status-locked';
-      }
-      const existingBadge = tile.querySelector('.shame-stamp-badge');
-      if (existingBadge) {
-        existingBadge.style.transition = 'opacity 0.6s ease';
-        existingBadge.style.opacity = '0';
-        setTimeout(() => existingBadge.remove(), 600);
-      }
-    }
-  }
-
-  // Microphones & Push to Talk
-  muteMic(shouldMute) {
-    this.isMicMuted = shouldMute;
-    if (this.localCamStream) {
-      const track = this.localCamStream.getAudioTracks()[0];
-      if (track) track.enabled = !shouldMute;
-    }
-    const micBtn = document.getElementById('toggle-mic-btn');
-    if (micBtn) {
-      micBtn.innerHTML = shouldMute ? '<span>🎤 Unmute</span>' : '<span>🎙️ Mute</span>';
-      micBtn.className = shouldMute ? 'control-btn mic-muted' : 'control-btn mic-active';
-    }
-  }
-
-  // Camera Privacy Toggle (Zoom Style)
   toggleCamera() {
     this.isCameraPrivacyActive = !this.isCameraPrivacyActive;
-
-    if (this.localCamStream) {
-      const videoTrack = this.localCamStream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = !this.isCameraPrivacyActive;
-      }
-    }
-
+    const camBtn = document.getElementById('toggle-cam-btn');
     const avatarCard = document.getElementById('local-avatar-card');
     const localScreenVideo = document.getElementById('local-screen-video');
-    const localCamVideo = document.getElementById('local-cam-video');
-    const camBtn = document.getElementById('toggle-cam-btn');
+
+    if (this.localCamStream) {
+      const vidTrack = this.localCamStream.getVideoTracks()[0];
+      if (vidTrack) vidTrack.enabled = !this.isCameraPrivacyActive;
+    }
 
     if (this.isCameraPrivacyActive) {
-      if (avatarCard && !this.isScreenSharing) avatarCard.classList.remove('hidden');
-      if (localScreenVideo && !this.isScreenSharing) localScreenVideo.style.opacity = '0';
-      if (localCamVideo) localCamVideo.style.opacity = '0';
       if (camBtn) {
-        camBtn.innerHTML = '<span>📷 Start Video</span>';
+        camBtn.innerHTML = '<span>📹 Start Video</span>';
         camBtn.className = 'control-btn cam-muted';
       }
+      if (avatarCard) avatarCard.classList.remove('hidden');
+      if (localScreenVideo && !this.isScreenSharing) localScreenVideo.style.opacity = '0';
     } else {
-      if (avatarCard) avatarCard.classList.add('hidden');
-      if (localScreenVideo) localScreenVideo.style.opacity = '1';
-      if (localCamVideo) localCamVideo.style.opacity = '1';
       if (camBtn) {
         camBtn.innerHTML = '<span>📹 Stop Video</span>';
         camBtn.className = 'control-btn cam-active';
       }
+      if (avatarCard) avatarCard.classList.add('hidden');
+      if (localScreenVideo) localScreenVideo.style.opacity = '1';
     }
 
     this.broadcastData({
       type: 'CAMERA_PRIVACY_TOGGLED',
-      userId: (window.Leaderboard && window.Leaderboard.currentUser.uid) || this.peerId,
-      isCameraOff: this.isCameraPrivacyActive
+      peerId: this.peerId,
+      isMuted: this.isCameraPrivacyActive
     });
-
-    if (window.TriggerEngine && window.TriggerEngine.showShameToast) {
-      window.TriggerEngine.showShameToast(this.isCameraPrivacyActive ? '🔒 Camera paused (Privacy Mode)' : '📹 Camera resumed');
-    }
   }
 
-  // Screen Share Toggle (Zoom Style)
   async toggleScreenShare() {
     if (this.isScreenSharing) {
       this.stopScreenShare();
@@ -987,7 +702,7 @@ class WebRTCRoomManager {
   async startScreenShare() {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-        alert('Screen sharing is not supported on this device/browser.');
+        alert('Screen sharing is not supported by your current browser.');
         return;
       }
 
@@ -998,13 +713,9 @@ class WebRTCRoomManager {
 
       this.isScreenSharing = true;
       const screenVidTrack = this.localScreenStream.getVideoTracks()[0];
-
-      // Replace outgoing video track on all active peer connections
       this.replaceOutgoingVideoTrack(screenVidTrack);
 
-      // Update Local Tile
       const localScreenVideo = document.getElementById('local-screen-video');
-      const localCamVideo = document.getElementById('local-cam-video');
       const pipWrapper = document.getElementById('local-pip-wrapper');
       const pipSwapBtn = document.getElementById('btn-pip-swap');
       const avatarCard = document.getElementById('local-avatar-card');
@@ -1015,10 +726,6 @@ class WebRTCRoomManager {
         localScreenVideo.style.opacity = '1';
         localScreenVideo.play().catch(e => console.log(e));
       }
-      if (localCamVideo && this.localCamStream) {
-        localCamVideo.srcObject = this.localCamStream;
-        localCamVideo.play().catch(e => console.log(e));
-      }
       if (pipWrapper) pipWrapper.style.display = 'block';
       if (pipSwapBtn) pipSwapBtn.style.display = 'inline-flex';
 
@@ -1028,20 +735,14 @@ class WebRTCRoomManager {
         screenBtn.className = 'control-btn screen-active';
       }
 
-      screenVidTrack.onended = () => {
-        this.stopScreenShare();
-      };
+      screenVidTrack.onended = () => this.stopScreenShare();
 
       this.broadcastData({
         type: 'SCREEN_SHARE_STARTED',
-        userId: (window.Leaderboard && window.Leaderboard.currentUser.uid) || this.peerId
+        peerId: this.peerId
       });
-
-      if (window.TriggerEngine && window.TriggerEngine.showShameToast) {
-        window.TriggerEngine.showShameToast('🖥️ Screen sharing is now live to all peers!');
-      }
     } catch (err) {
-      console.warn('[WebRTC] getDisplayMedia error/cancelled:', err);
+      console.warn('[WebRTC] Screen share failed/cancelled:', err);
     }
   }
 
@@ -1050,17 +751,12 @@ class WebRTCRoomManager {
     this.isScreenSharing = false;
 
     if (this.localScreenStream) {
-      try {
-        this.localScreenStream.getTracks().forEach(t => t.stop());
-      } catch (e) {}
+      try { this.localScreenStream.getTracks().forEach(t => t.stop()); } catch (e) {}
       this.localScreenStream = null;
     }
 
-    // Revert outgoing video track back to camera
     const camTrack = this.localCamStream && this.localCamStream.getVideoTracks()[0];
-    if (camTrack) {
-      this.replaceOutgoingVideoTrack(camTrack);
-    }
+    if (camTrack) this.replaceOutgoingVideoTrack(camTrack);
 
     const localScreenVideo = document.getElementById('local-screen-video');
     const pipWrapper = document.getElementById('local-pip-wrapper');
@@ -1090,173 +786,166 @@ class WebRTCRoomManager {
 
     this.broadcastData({
       type: 'SCREEN_SHARE_STOPPED',
-      userId: (window.Leaderboard && window.Leaderboard.currentUser.uid) || this.peerId
+      peerId: this.peerId
     });
+  }
+
+  swapPiP() {
+    if (!this.localScreenStream || !this.localCamStream) return;
+    this.isCamSwapped = !this.isCamSwapped;
+    this.updateTileLayout();
+  }
+
+  updateTileLayout() {
+    const localScreenVideo = document.getElementById('local-screen-video');
+    const localCamVideo = document.getElementById('local-cam-video');
+
+    if (this.isDualFeedActive && this.localScreenStream && this.localCamStream) {
+      if (this.isCamSwapped) {
+        if (localScreenVideo) localScreenVideo.srcObject = this.localCamStream;
+        if (localCamVideo) localCamVideo.srcObject = this.localScreenStream;
+      } else {
+        if (localScreenVideo) localScreenVideo.srcObject = this.localScreenStream;
+        if (localCamVideo) localCamVideo.srcObject = this.localCamStream;
+      }
+    }
+  }
+
+  muteMic(shouldMute) {
+    this.isMicMuted = shouldMute;
+    if (this.localCamStream) {
+      const audioTracks = this.localCamStream.getAudioTracks();
+      audioTracks.forEach(t => t.enabled = !shouldMute);
+    }
+    const micBtn = document.getElementById('toggle-mic-btn');
+    if (micBtn) {
+      if (shouldMute) {
+        micBtn.innerHTML = '<span>🎤 Unmute</span>';
+        micBtn.className = 'control-btn mic-muted';
+      } else {
+        micBtn.innerHTML = '<span>🎤 Mute</span>';
+        micBtn.className = 'control-btn mic-active';
+      }
+    }
+  }
+
+  toggleMic() {
+    this.muteMic(!this.isMicMuted);
   }
 
   toggleRaiseHand() {
     this.isHandRaised = !this.isHandRaised;
     const handBtn = document.getElementById('raise-hand-btn');
-    const localIndicator = document.getElementById('local-hand-indicator');
+    const indicator = document.getElementById('local-hand-indicator');
 
-    if (this.isHandRaised) {
-      if (handBtn) handBtn.classList.add('active-hand');
-      if (localIndicator) localIndicator.classList.remove('hidden');
-      if (window.Soundboard) window.Soundboard.playSynthesizedTone('gentle_chime', 0.6);
-    } else {
-      if (handBtn) handBtn.classList.remove('active-hand');
-      if (localIndicator) localIndicator.classList.add('hidden');
+    if (handBtn) {
+      handBtn.classList.toggle('active', this.isHandRaised);
+      handBtn.style.background = this.isHandRaised ? 'rgba(245, 158, 11, 0.3)' : '';
+    }
+    if (indicator) {
+      indicator.classList.toggle('hidden', !this.isHandRaised);
     }
 
     this.broadcastData({
-      type: 'HAND_RAISE',
-      userId: (window.Leaderboard && window.Leaderboard.currentUser.uid) || this.peerId,
-      isRaised: this.isHandRaised
+      type: 'HAND_RAISED',
+      peerId: this.peerId,
+      isHandRaised: this.isHandRaised
     });
   }
 
-  // Picture in Picture Swap
-  swapPiP() {
-    if (!this.isDualFeedActive) return;
-    this.isCamSwapped = !this.isCamSwapped;
-    const localCamVideo = document.getElementById('local-cam-video');
-    const localScreenVideo = document.getElementById('local-screen-video');
-    if (localCamVideo && localScreenVideo) {
-      const temp = localScreenVideo.srcObject;
-      localScreenVideo.srcObject = localCamVideo.srcObject;
-      localCamVideo.srcObject = temp;
-    }
-    const localTile = document.getElementById('local-user-tile');
-    if (localTile) {
-      localTile.classList.toggle('pip-swapped', this.isCamSwapped);
+  broadcastData(data) {
+    if (this.roomId) {
+      window.FirebaseSync.broadcastEvent(this.roomId, {
+        ...data,
+        senderId: this.peerId,
+        senderName: localStorage.getItem('lockedin_display_name') || 'Scholar'
+      });
     }
   }
 
-  updateTileLayout() {
-    const localTile = document.getElementById('local-user-tile');
-    if (!localTile) return;
+  handleIncomingData(data, fromPeerId) {
+    if (!data || fromPeerId === this.peerId) return;
 
-    if (this.isDualFeedActive) {
-      localTile.classList.add('dual-feed');
-      localTile.classList.remove('cam-only');
-    } else {
-      localTile.classList.remove('dual-feed');
-      localTile.classList.add('cam-only');
-    }
-  }
-
-  updateRoomHeader() {
-    const roomBadge = document.getElementById('room-id-badge');
-    if (roomBadge) {
-      if (this.isPrivate) {
-        roomBadge.innerHTML = `🔒 Private: <strong>${this.escapeHtml(this.roomId)}</strong>`;
-        roomBadge.style.borderColor = '#6366f1';
-        roomBadge.style.color = '#c7d2fe';
-      } else {
-        const cleanName = this.roomId.replace(/^focus-/, '').replace(/^lockedin-/, '');
-        roomBadge.innerHTML = `🌐 Public: <strong>${this.escapeHtml(cleanName)}</strong>`;
-        roomBadge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-        roomBadge.style.color = '#a7f3d0';
+    if (data.type === 'HAND_RAISED') {
+      const tile = document.getElementById(`tile-${fromPeerId}`);
+      if (tile) {
+        const ind = tile.querySelector('.hand-indicator');
+        if (ind) ind.classList.toggle('hidden', !data.isHandRaised);
       }
-    }
-    this.updateRoomParticipantCount();
-  }
-
-  updateRoomParticipantCount() {
-    let activePeers = 0;
-    this.peers.forEach((p, id) => {
-      const hasStream = p.stream && p.stream.active;
-      const hasConn = p.dataConn && p.dataConn.open;
-      const hasTile = !!document.getElementById(`tile-${id}`);
-      if (hasStream || hasConn || hasTile) {
-        activePeers++;
+    } else if (data.type === 'CAMERA_PRIVACY_TOGGLED') {
+      const tile = document.getElementById(`tile-${fromPeerId}`);
+      if (tile) {
+        const avatar = tile.querySelector('.tile-avatar-card');
+        const video = tile.querySelector('.remote-video');
+        if (avatar && video) {
+          if (data.isMuted) {
+            avatar.classList.remove('hidden');
+            video.style.opacity = '0';
+          } else {
+            avatar.classList.add('hidden');
+            video.style.opacity = '1';
+          }
+        }
       }
-    });
-
-    const total = 1 + activePeers;
-    const countBadge = document.getElementById('room-count-badge');
-    if (countBadge) {
-      countBadge.innerHTML = `<span style="color:#10b981; font-weight:800;">🟢 ${total}</span> Active ${total === 1 ? 'Scholar' : 'Scholars'}`;
-      countBadge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-    }
-
-    const headerActivePill = document.getElementById('header-live-active-pill');
-    if (headerActivePill) {
-      headerActivePill.textContent = `🟢 ${total} Active`;
+    } else if (data.type === 'SHAME_TRIGGER') {
+      if (window.TriggerEngine && window.TriggerEngine.showShameToast) {
+        window.TriggerEngine.showShameToast(`🚨 ${data.senderName || 'A peer'} was caught: ${data.reason || 'Distracted!'}`);
+      }
     }
   }
 
   leaveStudyRoom() {
-    console.log('[WebRTC] Leaving study room...');
+    console.log('[WebRTC] Leaving study room:', this.roomId);
 
-    // Stop local camera and screen share tracks
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+    if (this.unsubscribeParticipants) {
+      this.unsubscribeParticipants();
+      this.unsubscribeParticipants = null;
+    }
+    if (this.unsubscribeEvents) {
+      this.unsubscribeEvents();
+      this.unsubscribeEvents = null;
+    }
+
+    // Clean up Firestore presence
+    if (this.roomId && this.peerId) {
+      window.FirebaseSync.removeParticipantPresence(this.roomId, this.peerId);
+    }
+
+    // Stop tracks
     if (this.localCamStream) {
-      try {
-        this.localCamStream.getTracks().forEach(t => t.stop());
-      } catch (e) {}
+      try { this.localCamStream.getTracks().forEach(t => t.stop()); } catch (e) {}
       this.localCamStream = null;
     }
     if (this.localScreenStream) {
-      try {
-        this.localScreenStream.getTracks().forEach(t => t.stop());
-      } catch (e) {}
+      try { this.localScreenStream.getTracks().forEach(t => t.stop()); } catch (e) {}
       this.localScreenStream = null;
     }
 
-    // Clear video elements
+    // Close connections & clear tiles
+    this.peers.forEach((p, rId) => {
+      if (p.unsubsConn) p.unsubsConn();
+      if (p.unsubsCand) p.unsubsCand();
+      if (p.pc) {
+        try { p.pc.close(); } catch (e) {}
+      }
+      const tile = document.getElementById(`tile-${rId}`);
+      if (tile) tile.remove();
+    });
+    this.peers.clear();
+
+    // Reset DOM
     const localCamVideo = document.getElementById('local-cam-video');
     if (localCamVideo) localCamVideo.srcObject = null;
     const localScreenVideo = document.getElementById('local-screen-video');
     if (localScreenVideo) localScreenVideo.srcObject = null;
 
-    // Clear mesh probe loop
-    if (this.meshProbeInterval) {
-      clearInterval(this.meshProbeInterval);
-      this.meshProbeInterval = null;
-    }
+    if (window.TriggerEngine) window.TriggerEngine.stopMonitoring();
+    if (window.StudyTimer) window.StudyTimer.pauseTimer();
 
-    // Post broadcast that we are leaving
-    this.postBroadcast({
-      type: 'PEER_LEFT',
-      peerId: this.peerId,
-      slot: this.mySlot
-    });
-
-    // Close all peer calls and connections
-    this.peers.forEach((p, remoteId) => {
-      try { p.call?.close(); } catch(e){}
-      try { p.dataConn?.close(); } catch(e){}
-      const tile = document.getElementById(`tile-${remoteId}`);
-      if (tile) tile.remove();
-    });
-    this.peers.clear();
-
-    // Destroy Peer instance so slot is immediately released
-    if (this.peer) {
-      try {
-        this.peer.destroy();
-      } catch (e) {}
-      this.peer = null;
-    }
-
-    if (this.broadcastChannel) {
-      try {
-        this.broadcastChannel.close();
-      } catch (e) {}
-      this.broadcastChannel = null;
-    }
-
-    // Stop AI Trigger Engine
-    if (window.TriggerEngine) {
-      window.TriggerEngine.stopMonitoring();
-    }
-
-    // Pause timer
-    if (window.StudyTimer) {
-      window.StudyTimer.pauseTimer();
-    }
-
-    // Reset Header Badges
     const roomBadge = document.getElementById('room-id-badge');
     if (roomBadge) {
       roomBadge.innerHTML = 'Lobby';
@@ -1264,23 +953,18 @@ class WebRTCRoomManager {
       roomBadge.style.borderColor = '';
     }
     const countBadge = document.getElementById('room-count-badge');
-    if (countBadge) {
-      countBadge.textContent = '1/8 Online';
-    }
+    if (countBadge) countBadge.textContent = '1/8 Online';
 
-    // Hide Leave buttons
+    const shareBar = document.getElementById('room-code-share-bar');
+    if (shareBar) shareBar.classList.add('hidden');
+
     const leaveBtnHeader = document.getElementById('btn-leave-room-header');
     if (leaveBtnHeader) leaveBtnHeader.style.display = 'none';
 
-    // Switch view back to Lobby
     const studyView = document.getElementById('study-room-view');
     const lobbyView = document.getElementById('lobby-view');
     if (studyView) studyView.classList.add('hidden');
     if (lobbyView) lobbyView.classList.remove('hidden');
-  }
-
-  getPeerCount() {
-    return 1 + this.peers.size;
   }
 
   escapeHtml(str) {

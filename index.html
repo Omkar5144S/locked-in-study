@@ -27,7 +27,7 @@
       document.documentElement.style.colorScheme = (t === 'vibrant') ? 'light' : 'dark';
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=3.0">
+  <link rel="stylesheet" href="styles.css?v=3.1">
   
   <!-- PeerJS WebRTC Mesh -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -56,6 +56,20 @@
       <span id="room-id-badge" class="chip-badge">Lobby</span>
       <span id="room-count-badge" class="chip-badge live-active-badge">🟢 1 Active</span>
       <span class="chip-badge privacy-chip" title="Hardware kill-switches & Anti-Leak Dynamic Watermark active">🛡️ Anti-Leak Protected</span>
+      
+      <!-- Prominent Room Code & Share Bar (Always visible inside active room) -->
+      <div id="room-code-share-bar" class="room-code-share-bar hidden">
+        <div class="room-code-pill" id="active-room-code-pill">
+          ROOM CODE: <strong id="active-room-code-text">STUDY-492</strong>
+        </div>
+        <button type="button" id="btn-copy-room-code" class="btn-share-action" title="Copy 6-character room code">
+          <span>📋 Copy Code</span>
+        </button>
+        <button type="button" id="btn-copy-room-link" class="btn-share-action" title="Copy full invite link">
+          <span>🔗 Copy Invite Link</span>
+        </button>
+      </div>
+
       <button id="btn-copy-invite" class="btn-icon-label" title="Copy shareable room link">
         <span>🔗 Invite</span>
       </button>
@@ -65,6 +79,16 @@
     </div>
 
     <div class="header-actions">
+      <!-- Google Auth Button & Verified Profile Chip -->
+      <button type="button" id="btn-google-auth" class="btn-icon-label btn-auth" title="Sign in with Google to sync stats & verified badge">
+        <span id="auth-btn-icon">🌐</span> <span id="auth-btn-label">Sign in</span>
+      </button>
+      <div id="user-profile-chip" class="user-profile-chip hidden">
+        <span class="user-avatar-initial" id="header-avatar-initial">S</span>
+        <span class="user-callsign" id="header-user-callsign">Scholar</span>
+        <span class="user-verified-badge" title="Verified Scholar">✓ Verified</span>
+      </div>
+
       <span id="user-streak-badge" class="chip-badge" style="border-color: rgba(249, 115, 22, 0.4); color: #f97316; font-weight:700;">🔥 1 Day</span>
       <button id="btn-toggle-fullscreen" class="btn-icon-label" title="Immersive Fullscreen Study Mode">
         <span>⛶ Immersive</span>
@@ -510,14 +534,17 @@
     </div>
   </div>
 
+  <!-- Floating Toast Notification -->
+  <div id="app-toast" class="app-toast hidden"></div>
+
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=3.0"></script>
-  <script src="js/noise-generator.js?v=3.0"></script>
-  <script src="js/firebase-config.js?v=3.0"></script>
-  <script src="js/leaderboard.js?v=3.0"></script>
-  <script src="js/timer.js?v=3.0"></script>
-  <script src="js/webrtc-room.js?v=3.0"></script>
-  <script src="js/trigger-engine.js?v=3.0"></script>
-  <script src="js/app.js?v=3.0"></script>
+  <script src="js/soundboard-admin.js?v=3.1"></script>
+  <script src="js/noise-generator.js?v=3.1"></script>
+  <script src="js/firebase-config.js?v=3.1"></script>
+  <script src="js/leaderboard.js?v=3.1"></script>
+  <script src="js/timer.js?v=3.1"></script>
+  <script src="js/webrtc-room.js?v=3.1"></script>
+  <script src="js/trigger-engine.js?v=3.1"></script>
+  <script src="js/app.js?v=3.1"></script>
 </body>
 </html>
