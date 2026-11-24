@@ -1861,3 +1861,176 @@ body {
     max-height: 94dvh;
   }
 }
+
+/* =========================================================
+   VIBRANT DAYLIGHT THEME (Light, Colorful & Full of Life)
+   ========================================================= */
+[data-theme="vibrant"] {
+  --bg-dark: #f8fafc;
+  --bg-elevated: rgba(255, 255, 255, 0.88);
+  --bg-card: rgba(255, 255, 255, 0.92);
+  --bg-card-hover: #ffffff;
+  --bg-input: #ffffff;
+
+  --glass-border: 1px solid rgba(226, 232, 240, 0.85);
+  --glass-specular: inset 0 1px 0 rgba(255, 255, 255, 1);
+  --glass-shadow: 0 14px 34px rgba(148, 163, 184, 0.16);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #94a3b8;
+  --border-color: rgba(203, 213, 225, 0.7);
+
+  background: radial-gradient(circle at 10% 15%, rgba(253, 224, 71, 0.22) 0%, transparent 45%),
+              radial-gradient(circle at 90% 15%, rgba(110, 231, 183, 0.28) 0%, transparent 45%),
+              radial-gradient(circle at 50% 85%, rgba(199, 210, 254, 0.35) 0%, transparent 55%),
+              linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  background-attachment: fixed;
+  color: var(--text-primary);
+}
+
+[data-theme="vibrant"] .app-header {
+  background-color: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 4px 20px rgba(148, 163, 184, 0.1);
+}
+
+[data-theme="vibrant"] .btn-icon-label {
+  background: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  box-shadow: 0 2px 6px rgba(148, 163, 184, 0.1);
+}
+
+[data-theme="vibrant"] .btn-icon-label:hover {
+  background: #ffffff;
+  border-color: #3b82f6;
+  color: #2563eb;
+}
+
+[data-theme="vibrant"] .lobby-container {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 20px 45px rgba(100, 116, 139, 0.12), inset 0 1px 0 #ffffff;
+}
+
+[data-theme="vibrant"] .lobby-hero h1 {
+  background: linear-gradient(135deg, #059669 0%, #0284c7 50%, #7c3aed 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+[data-theme="vibrant"] .form-input {
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  color: #0f172a;
+}
+
+[data-theme="vibrant"] .form-input:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+}
+
+[data-theme="vibrant"] .mode-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(148, 163, 184, 0.08);
+}
+
+[data-theme="vibrant"] .mode-card:hover {
+  border-color: #10b981;
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.14);
+}
+
+[data-theme="vibrant"] .amongus-terminal-nav {
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+}
+
+[data-theme="vibrant"] .au-tab-btn {
+  color: #475569;
+}
+
+[data-theme="vibrant"] .au-tab-btn.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 2px 8px rgba(100, 116, 139, 0.15);
+}
+
+[data-theme="vibrant"] .au-browser-panel,
+[data-theme="vibrant"] .au-private-panel,
+[data-theme="vibrant"] .au-host-panel {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 24px rgba(148, 163, 184, 0.1);
+}
+
+[data-theme="vibrant"] .au-room-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(148, 163, 184, 0.06);
+}
+
+[data-theme="vibrant"] .au-room-card:hover {
+  background: #ffffff;
+  border-color: #10b981;
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.15);
+}
+
+[data-theme="vibrant"] .au-room-title {
+  color: #0f172a;
+}
+
+[data-theme="vibrant"] .au-capacity-text {
+  color: #0f172a;
+}
+
+[data-theme="vibrant"] .study-tile {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  box-shadow: 0 10px 30px rgba(148, 163, 184, 0.14);
+}
+
+[data-theme="vibrant"] .timer-dock {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 12px 35px rgba(100, 116, 139, 0.15);
+}
+
+[data-theme="vibrant"] .preset-btn {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+}
+
+[data-theme="vibrant"] .control-btn {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+
+[data-theme="vibrant"] .modal-window,
+[data-theme="vibrant"] .side-drawer {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  box-shadow: 0 25px 60px rgba(100, 116, 139, 0.25);
+}
+
+[data-theme="vibrant"] .modal-header h3,
+[data-theme="vibrant"] .drawer-header h3 {
+  color: #0f172a;
+}
+
+[data-theme="vibrant"] .soundboard-card,
+[data-theme="vibrant"] .noise-panel-box,
+[data-theme="vibrant"] .firebase-config-section {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+}
+
+[data-theme="vibrant"] .soundboard-card h4,
+[data-theme="vibrant"] .noise-panel-box h4 {
+  color: #0f172a;
+}

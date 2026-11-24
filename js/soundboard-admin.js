@@ -318,19 +318,21 @@ class SoundboardManager {
     }
   }
 
-  async saveSoundSlot(triggerId, { url, blob, fileName, volume }) {
+  async saveSoundSlot(triggerId, { url, blob, dataUrl, fileName, volume }) {
     if (!this.soundConfigs[triggerId]) {
       this.soundConfigs[triggerId] = {};
     }
 
     if (volume !== undefined) this.soundConfigs[triggerId].volume = volume;
     if (url !== undefined) this.soundConfigs[triggerId].url = url;
+    if (dataUrl !== undefined) this.soundConfigs[triggerId].dataUrl = dataUrl;
 
-    // Save metadata in localStorage (without large binary blob)
+    // Save metadata in localStorage
     const exportable = {};
     for (const [key, val] of Object.entries(this.soundConfigs)) {
       exportable[key] = {
         url: val.url || '',
+        dataUrl: (val.dataUrl && val.dataUrl.length < 300000) ? val.dataUrl : '', // keep reasonable size
         fileName: val.fileName || '',
         volume: val.volume !== undefined ? val.volume : 80
       };
@@ -342,12 +344,21 @@ class SoundboardManager {
       try {
         this.soundConfigs[triggerId].blob = blob;
         this.soundConfigs[triggerId].fileName = fileName;
+        if (dataUrl) this.soundConfigs[triggerId].dataUrl = dataUrl;
         const tx = this.db.transaction('sounds', 'readwrite');
         const store = tx.objectStore('sounds');
         store.put({
           triggerId,
           audioBlob: blob,
+          dataUrl: dataUrl || '',
           fileName,
+          updatedAt: Date.now()
+        });
+      } catch (e) {
+        console.warn('[IndexedDB] Failed to save blob:', e);
+      }
+    }
+  }
           updatedAt: Date.now()
         });
       } catch (e) {
@@ -422,6 +433,22 @@ class SoundboardManager {
 
     // 3. Built-in Web Audio API Synthesizer Fallback
     this.playSynthesizedTone(triggerId, volume);
+  }
+
+  // Play audio from a broadcasted URL/DataURI so all peers hear the same meme sound
+  async playAudioFromUrl(url, fallbackTriggerId = null) {
+    if (this.isMuted || !url) return;
+    this.ensureAudioResumed();
+    try {
+      const audio = new Audio(url);
+      audio.volume = 0.85;
+      await audio.play();
+    } catch (err) {
+      console.warn('[Audio] Failed playing broadcast audio URL, using synth fallback:', err);
+      if (fallbackTriggerId) {
+        this.playSynthesizedTone(fallbackTriggerId, 0.85);
+      }
+    }
   }
 
   // Built-in Synthesizer Fallback: Zero network required, instant playback!

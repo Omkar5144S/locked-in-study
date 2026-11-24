@@ -462,10 +462,14 @@ class TriggerEngine {
 
     // 5. Broadcast to room peers & Wall of Shame
     const currentUserName = (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Student';
+    const soundConf = (window.Soundboard && window.Soundboard.soundConfigs[triggerId]) || {};
+    const broadcastAudio = soundConf.url || soundConf.dataUrl || null;
+
     const shameEvent = {
       type: 'USER_SHAMED',
       triggerId,
       triggerName: reasonText,
+      audioUrl: broadcastAudio,
       userName: currentUserName,
       userId: (window.Leaderboard && window.Leaderboard.currentUser.uid) || 'local',
       timestamp: Date.now()

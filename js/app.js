@@ -518,12 +518,18 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Audio file size exceeds 800KB limit for free offline storage.');
             return;
           }
-          window.Soundboard.saveSoundSlot(t.id, {
-            blob: file,
-            fileName: file.name,
-            volume: parseInt(volSlider.value, 10)
-          });
-          dropLabel.textContent = file.name;
+          const reader = new FileReader();
+          reader.onload = (re) => {
+            const dataUrl = re.target.result;
+            window.Soundboard.saveSoundSlot(t.id, {
+              blob: file,
+              dataUrl: dataUrl,
+              fileName: file.name,
+              volume: parseInt(volSlider.value, 10)
+            });
+            dropLabel.textContent = file.name;
+          };
+          reader.readAsDataURL(file);
         }
       });
 
@@ -708,6 +714,33 @@ document.addEventListener('DOMContentLoaded', () => {
         window.StudyNoise.stopNoise();
         window.StudyNoise.setNowListening('None');
       }
+    });
+  }
+
+  // 12. Theme Switcher (Vibrant Daylight vs Dark Studio)
+  const toggleThemeBtn = document.getElementById('btn-toggle-theme');
+  const themeIcon = document.getElementById('theme-icon');
+  const themeLabel = document.getElementById('theme-label');
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('lockedin_theme', theme);
+    if (theme === 'vibrant') {
+      if (themeIcon) themeIcon.textContent = '☀️';
+      if (themeLabel) themeLabel.textContent = 'Vibrant';
+    } else {
+      if (themeIcon) themeIcon.textContent = '🌙';
+      if (themeLabel) themeLabel.textContent = 'Dark';
+    }
+  }
+
+  const savedTheme = localStorage.getItem('lockedin_theme') || 'vibrant';
+  applyTheme(savedTheme);
+
+  if (toggleThemeBtn) {
+    toggleThemeBtn.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'vibrant';
+      applyTheme(current === 'vibrant' ? 'dark' : 'vibrant');
     });
   }
 

@@ -493,7 +493,11 @@ class WebRTCRoomManager {
     }
 
     if (window.Soundboard) {
-      window.Soundboard.playTrigger(event.triggerId);
+      if (event.audioUrl) {
+        window.Soundboard.playAudioFromUrl(event.audioUrl, event.triggerId);
+      } else {
+        window.Soundboard.playTrigger(event.triggerId);
+      }
     }
   }
 
