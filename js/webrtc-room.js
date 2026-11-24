@@ -456,7 +456,6 @@ class WebRTCRoomManager {
         }
         break;
 
-    switch (data.type) {
       case 'HANDSHAKE':
         this.updateRemoteTileHUD(senderPeerId, data);
         break;
@@ -497,6 +496,9 @@ class WebRTCRoomManager {
 
       case 'NOW_LISTENING':
         this.updateRemoteListeningStatus(senderPeerId, data);
+        break;
+
+      default:
         break;
     }
   }
