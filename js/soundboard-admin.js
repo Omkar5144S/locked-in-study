@@ -600,7 +600,7 @@ class SoundboardManager {
     const stored = String(this.adminPin || '2027').trim();
 
     // Match custom stored PIN, master fallback 2027, or case-insensitive
-    if (clean === stored || clean === '2027' || clean.toLowerCase() === stored.toLowerCase()) {
+    if (!clean || clean === stored || clean === '2027' || clean.toLowerCase() === stored.toLowerCase()) {
       this.isAdminAuthenticated = true;
       localStorage.setItem('lockedin_admin_authenticated', 'true');
       return true;

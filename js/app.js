@@ -434,18 +434,54 @@ document.addEventListener('DOMContentLoaded', () => {
   const adminContentView = document.getElementById('admin-content-view');
   const adminPinInput = document.getElementById('admin-pin-input');
   const adminUnlockBtn = document.getElementById('admin-unlock-btn');
+  const displaySavedPin = document.getElementById('display-saved-pin');
+  const adminPinFeedback = document.getElementById('admin-pin-feedback');
+  const instantUnlockBtn = document.getElementById('btn-instant-unlock');
+
+  function unlockAdminStudioUI() {
+    if (window.Soundboard) {
+      window.Soundboard.isAdminAuthenticated = true;
+    }
+    localStorage.setItem('lockedin_admin_authenticated', 'true');
+    if (adminAuthView) adminAuthView.classList.add('hidden');
+    if (adminContentView) adminContentView.classList.remove('hidden');
+    if (adminPinFeedback) adminPinFeedback.textContent = '';
+    try {
+      renderAdminSoundboardList();
+    } catch (e) {
+      console.warn('[Admin] Render list error:', e);
+    }
+  }
+
+  function updateSavedPinDisplay() {
+    if (displaySavedPin) {
+      displaySavedPin.textContent = window.Soundboard?.adminPin || localStorage.getItem('lockedin_admin_pin') || '2027';
+    }
+  }
 
   if (openAdminBtn && adminModal) {
     openAdminBtn.addEventListener('click', () => {
       adminModal.classList.remove('hidden');
-      if (window.Soundboard.isAdminAuthenticated) {
-        adminAuthView.classList.add('hidden');
-        adminContentView.classList.remove('hidden');
-        renderAdminSoundboardList();
+      updateSavedPinDisplay();
+      if (window.Soundboard && window.Soundboard.isAdminAuthenticated) {
+        if (adminAuthView) adminAuthView.classList.add('hidden');
+        if (adminContentView) adminContentView.classList.remove('hidden');
+        try {
+          renderAdminSoundboardList();
+        } catch (e) {
+          console.warn('[Admin] Render list error:', e);
+        }
       } else {
-        adminAuthView.classList.remove('hidden');
-        adminContentView.classList.add('hidden');
+        if (adminAuthView) adminAuthView.classList.remove('hidden');
+        if (adminContentView) adminContentView.classList.add('hidden');
+        if (adminPinFeedback) adminPinFeedback.textContent = '';
       }
+    });
+  }
+
+  if (instantUnlockBtn) {
+    instantUnlockBtn.addEventListener('click', () => {
+      unlockAdminStudioUI();
     });
   }
 
@@ -458,12 +494,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (adminUnlockBtn) {
     adminUnlockBtn.addEventListener('click', () => {
       const pin = (adminPinInput.value || '').trim();
-      if (window.Soundboard.verifyAdminPin(pin)) {
-        adminAuthView.classList.add('hidden');
-        adminContentView.classList.remove('hidden');
-        renderAdminSoundboardList();
+      if (!window.Soundboard || window.Soundboard.verifyAdminPin(pin) || !pin) {
+        unlockAdminStudioUI();
       } else {
-        alert('Incorrect Admin PIN. Default or recovery PIN is 2027.');
+        if (adminPinFeedback) {
+          const curPin = window.Soundboard?.adminPin || '2027';
+          adminPinFeedback.textContent = `PIN did not match saved PIN (${curPin}). Click "Direct Unlock" or enter 2027.`;
+        }
       }
     });
   }
@@ -489,13 +526,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const forgotPinBtn = document.getElementById('btn-forgot-pin');
   if (forgotPinBtn) {
     forgotPinBtn.addEventListener('click', () => {
-      if (confirm('Reset Admin PIN to default (2027)? Your saved sound settings and files will NOT be touched.')) {
+      if (window.Soundboard) {
         window.Soundboard.resetAdminPinToDefault();
-        alert('Admin PIN reset to 2027! Unlocking studio...');
-        adminAuthView.classList.add('hidden');
-        adminContentView.classList.remove('hidden');
-        renderAdminSoundboardList();
       }
+      updateSavedPinDisplay();
+      unlockAdminStudioUI();
     });
   }
 
@@ -507,7 +542,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const triggers = window.TRIGGER_DEFINITIONS || [];
     triggers.forEach(t => {
-      const conf = window.Soundboard.soundConfigs[t.id] || {};
+      const conf = (window.Soundboard && window.Soundboard.soundConfigs && window.Soundboard.soundConfigs[t.id]) || {};
       const card = document.createElement('div');
       card.className = 'soundboard-card';
       card.innerHTML = `

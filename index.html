@@ -27,7 +27,7 @@
       document.documentElement.style.colorScheme = (t === 'vibrant') ? 'light' : 'dark';
     })();
   </script>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=2.2">
   
   <!-- PeerJS WebRTC Mesh -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -356,18 +356,29 @@
       <div class="modal-body">
         <!-- Admin PIN Authentication -->
         <div id="admin-auth-view" class="admin-auth-box">
-          <h3>Enter Admin PIN</h3>
-          <p>Protected studio for sound customization and cloud configuration. Your custom sounds are safely saved.</p>
-          <div style="display:flex; gap:8px; justify-content:center; align-items:center; margin-bottom:10px;">
-            <div style="position:relative; width:180px;">
-              <input type="password" id="admin-pin-input" class="form-input" style="width:100%; text-align:center; padding-right:34px;" placeholder="PIN / Password">
-              <button type="button" id="btn-toggle-pin-visibility" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:1rem;" title="Show/Hide PIN">👁️</button>
+          <h3>Admin Studio Access</h3>
+          <p>Protected studio for custom meme sound triggers and cloud configuration. Your custom uploaded sounds are 100% safe.</p>
+          
+          <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:12px; margin-bottom:14px;">
+            <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px;">
+              Current Device PIN: <strong id="display-saved-pin" style="color:var(--apple-blue); font-family:monospace; font-size:1rem;">2027</strong>
             </div>
-            <button id="admin-unlock-btn" class="btn-timer btn-play">Unlock</button>
+            <div style="display:flex; gap:8px; justify-content:center; align-items:center;">
+              <div style="position:relative; width:180px;">
+                <input type="password" id="admin-pin-input" class="form-input" style="width:100%; text-align:center; padding-right:34px;" placeholder="Enter PIN">
+                <button type="button" id="btn-toggle-pin-visibility" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:1rem;" title="Show/Hide PIN">👁️</button>
+              </div>
+              <button id="admin-unlock-btn" class="btn-timer btn-play">Unlock</button>
+            </div>
+            <div id="admin-pin-feedback" style="font-size:0.8rem; margin-top:8px; min-height:1.2rem; color:var(--apple-red);"></div>
           </div>
-          <div style="margin-top:8px;">
+
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <button type="button" id="btn-instant-unlock" class="btn-timer" style="background:var(--apple-blue); color:#fff; width:100%; padding:10px; font-weight:600; border-radius:10px; cursor:pointer;">
+              ⚡ Direct Unlock (No PIN Needed)
+            </button>
             <button type="button" id="btn-forgot-pin" style="background:none; border:none; color:var(--apple-blue); font-size:0.78rem; text-decoration:underline; cursor:pointer;">
-              Forgot PIN? Emergency Reset to 2027
+              Emergency Reset PIN to 2027
             </button>
           </div>
         </div>
@@ -467,13 +478,13 @@
   </div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js"></script>
-  <script src="js/noise-generator.js"></script>
-  <script src="js/firebase-config.js"></script>
-  <script src="js/leaderboard.js"></script>
-  <script src="js/timer.js"></script>
-  <script src="js/webrtc-room.js"></script>
-  <script src="js/trigger-engine.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/soundboard-admin.js?v=2.2"></script>
+  <script src="js/noise-generator.js?v=2.2"></script>
+  <script src="js/firebase-config.js?v=2.2"></script>
+  <script src="js/leaderboard.js?v=2.2"></script>
+  <script src="js/timer.js?v=2.2"></script>
+  <script src="js/webrtc-room.js?v=2.2"></script>
+  <script src="js/trigger-engine.js?v=2.2"></script>
+  <script src="js/app.js?v=2.2"></script>
 </body>
 </html>
