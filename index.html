@@ -3,7 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f8fafc">
   <title>LOCKED-IN — Dual-Feed Public Study Accountability</title>
+  <script>
+    (function() {
+      const t = localStorage.getItem('lockedin_theme') || 'vibrant';
+      document.documentElement.setAttribute('data-theme', t);
+      document.documentElement.style.colorScheme = (t === 'vibrant') ? 'light' : 'dark';
+    })();
+  </script>
   <link rel="stylesheet" href="styles.css">
   
   <!-- PeerJS WebRTC Mesh -->

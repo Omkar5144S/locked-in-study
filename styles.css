@@ -1865,47 +1865,93 @@ body {
 /* =========================================================
    VIBRANT DAYLIGHT THEME (Light, Colorful & Full of Life)
    ========================================================= */
-[data-theme="vibrant"] {
+[data-theme="vibrant"],
+[data-theme="vibrant"] body,
+body[data-theme="vibrant"] {
+  color-scheme: light !important;
   --bg-dark: #f8fafc;
-  --bg-elevated: rgba(255, 255, 255, 0.88);
-  --bg-card: rgba(255, 255, 255, 0.92);
+  --bg-elevated: rgba(255, 255, 255, 0.92);
+  --bg-card: rgba(255, 255, 255, 0.95);
   --bg-card-hover: #ffffff;
   --bg-input: #ffffff;
 
-  --glass-border: 1px solid rgba(226, 232, 240, 0.85);
-  --glass-specular: inset 0 1px 0 rgba(255, 255, 255, 1);
-  --glass-shadow: 0 14px 34px rgba(148, 163, 184, 0.16);
+  --glass-border: 1px solid rgba(203, 213, 225, 0.8);
+  --glass-specular: inset 0 1px 0 #ffffff;
+  --glass-shadow: 0 12px 32px rgba(100, 116, 139, 0.12);
 
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-tertiary: #94a3b8;
-  --border-color: rgba(203, 213, 225, 0.7);
+  --text-primary: #0f172a !important;
+  --text-secondary: #334155 !important;
+  --text-tertiary: #64748b !important;
+  --border-color: rgba(203, 213, 225, 0.8);
 
-  background: radial-gradient(circle at 10% 15%, rgba(253, 224, 71, 0.22) 0%, transparent 45%),
-              radial-gradient(circle at 90% 15%, rgba(110, 231, 183, 0.28) 0%, transparent 45%),
-              radial-gradient(circle at 50% 85%, rgba(199, 210, 254, 0.35) 0%, transparent 55%),
-              linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  background-attachment: fixed;
-  color: var(--text-primary);
+  background: radial-gradient(circle at 10% 15%, rgba(253, 224, 71, 0.3) 0%, transparent 45%),
+              radial-gradient(circle at 90% 15%, rgba(110, 231, 183, 0.35) 0%, transparent 45%),
+              radial-gradient(circle at 50% 85%, rgba(199, 210, 254, 0.45) 0%, transparent 55%),
+              linear-gradient(135deg, #f8fafc 0%, #edf2f7 100%) !important;
+  background-attachment: fixed !important;
+  color: #0f172a !important;
+}
+
+[data-theme="vibrant"] .app-title {
+  color: #0f172a !important;
+}
+
+[data-theme="vibrant"] .chip-badge {
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: #334155 !important;
+  border: 1px solid #cbd5e1 !important;
 }
 
 [data-theme="vibrant"] .app-header {
-  background-color: rgba(255, 255, 255, 0.85);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
-  box-shadow: 0 4px 20px rgba(148, 163, 184, 0.1);
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.9) !important;
+  box-shadow: 0 4px 20px rgba(148, 163, 184, 0.15) !important;
 }
 
 [data-theme="vibrant"] .btn-icon-label {
-  background: rgba(255, 255, 255, 0.9);
-  color: #0f172a;
-  border: 1px solid rgba(203, 213, 225, 0.8);
-  box-shadow: 0 2px 6px rgba(148, 163, 184, 0.1);
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1.5px solid #cbd5e1 !important;
+  box-shadow: 0 2px 6px rgba(148, 163, 184, 0.15) !important;
 }
 
 [data-theme="vibrant"] .btn-icon-label:hover {
-  background: #ffffff;
-  border-color: #3b82f6;
-  color: #2563eb;
+  background: #ffffff !important;
+  border-color: #3b82f6 !important;
+  color: #2563eb !important;
+}
+
+[data-theme="vibrant"] .lobby-hero p {
+  color: #475569 !important;
+}
+
+[data-theme="vibrant"] .form-group label {
+  color: #334155 !important;
+}
+
+[data-theme="vibrant"] .mode-info h4 {
+  color: #0f172a !important;
+}
+
+[data-theme="vibrant"] .mode-info p {
+  color: #64748b !important;
+}
+
+[data-theme="vibrant"] .timer-display {
+  color: #0f172a !important;
+  text-shadow: none !important;
+}
+
+[data-theme="vibrant"] .user-badge {
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+[data-theme="vibrant"] .subject-badge {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #059669 !important;
+  border: 1px solid rgba(16, 185, 129, 0.3) !important;
 }
 
 [data-theme="vibrant"] .lobby-container {

@@ -724,11 +724,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
+    document.body.setAttribute('data-theme', theme);
     localStorage.setItem('lockedin_theme', theme);
+
     if (theme === 'vibrant') {
+      document.documentElement.style.colorScheme = 'light';
+      document.body.style.colorScheme = 'light';
+      const metaTheme = document.querySelector('meta[name="theme-color"]');
+      if (metaTheme) metaTheme.setAttribute('content', '#f8fafc');
       if (themeIcon) themeIcon.textContent = '☀️';
       if (themeLabel) themeLabel.textContent = 'Vibrant';
     } else {
+      document.documentElement.style.colorScheme = 'dark';
+      document.body.style.colorScheme = 'dark';
+      const metaTheme = document.querySelector('meta[name="theme-color"]');
+      if (metaTheme) metaTheme.setAttribute('content', '#070709');
       if (themeIcon) themeIcon.textContent = '🌙';
       if (themeLabel) themeLabel.textContent = 'Dark';
     }
@@ -738,9 +748,11 @@ document.addEventListener('DOMContentLoaded', () => {
   applyTheme(savedTheme);
 
   if (toggleThemeBtn) {
-    toggleThemeBtn.addEventListener('click', () => {
+    toggleThemeBtn.addEventListener('click', (e) => {
+      e.preventDefault();
       const current = document.documentElement.getAttribute('data-theme') || 'vibrant';
-      applyTheme(current === 'vibrant' ? 'dark' : 'vibrant');
+      const next = (current === 'vibrant') ? 'dark' : 'vibrant';
+      applyTheme(next);
     });
   }
 
