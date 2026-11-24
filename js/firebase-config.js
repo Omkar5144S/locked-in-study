@@ -718,6 +718,185 @@ class FirebaseManager {
       }
     }
   }
+
+  // =========================================================
+  // Peer Doubt Board (Community Questions & Answers)
+  // =========================================================
+  async createDoubt({ subject, questionText, imageUrl = '', bountyCoins = 20 }) {
+    const authorUid = this.currentUser ? this.currentUser.uid : 'anon_' + Date.now();
+    const authorCallSign = (this.currentUser && this.currentUser.callSign) || localStorage.getItem('lockedin_display_name') || 'Scholar';
+    const doubtId = 'd_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const doubtData = {
+      doubtId,
+      authorUid,
+      authorCallSign,
+      subject: subject || 'General Study',
+      questionText: questionText.trim(),
+      imageUrl: imageUrl || '',
+      bountyCoins: bountyCoins || 20,
+      status: 'OPEN',
+      createdAt: (this.isConfigured && window.firebase) ? window.firebase.firestore.FieldValue.serverTimestamp() : Date.now(),
+      updatedAt: (this.isConfigured && window.firebase) ? window.firebase.firestore.FieldValue.serverTimestamp() : Date.now()
+    };
+
+    if (this.isConfigured && this.db) {
+      try {
+        await this.db.collection('doubts').doc(doubtId).set(doubtData);
+        return doubtId;
+      } catch (err) {
+        console.warn('[Firebase] Create doubt error:', err);
+      }
+    }
+
+    // Local fallback
+    try {
+      const doubts = JSON.parse(localStorage.getItem('lockedin_local_doubts') || '[]');
+      doubts.unshift({ ...doubtData, createdAt: Date.now(), updatedAt: Date.now() });
+      localStorage.setItem('lockedin_local_doubts', JSON.stringify(doubts.slice(0, 50)));
+      const ch = this.getChannel('doubts_global');
+      ch.postMessage({ type: 'DOUBT_CREATED', doubt: doubtData });
+    } catch (e) {}
+    return doubtId;
+  }
+
+  listenToDoubts(callback) {
+    if (this.isConfigured && this.db) {
+      return this.db.collection('doubts')
+        .orderBy('createdAt', 'desc')
+        .limit(30)
+        .onSnapshot((snapshot) => {
+          const list = [];
+          snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+          callback(list);
+        }, (err) => {
+          console.warn('[Firebase] Doubts listener error:', err);
+        });
+    }
+
+    // Local fallback
+    const loadLocal = () => {
+      try {
+        const doubts = JSON.parse(localStorage.getItem('lockedin_local_doubts') || '[]');
+        callback(doubts);
+      } catch (e) {
+        callback([]);
+      }
+    };
+    loadLocal();
+    const ch = this.getChannel('doubts_global');
+    const handler = () => loadLocal();
+    ch.addEventListener('message', handler);
+    return () => ch.removeEventListener('message', handler);
+  }
+
+  async addDoubtAnswer(doubtId, answerText) {
+    const authorUid = this.currentUser ? this.currentUser.uid : 'anon_' + Date.now();
+    const authorCallSign = (this.currentUser && this.currentUser.callSign) || localStorage.getItem('lockedin_display_name') || 'Scholar';
+    const answerId = 'a_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const answerData = {
+      answerId,
+      doubtId,
+      authorUid,
+      authorCallSign,
+      answerText: answerText.trim(),
+      createdAt: (this.isConfigured && window.firebase) ? window.firebase.firestore.FieldValue.serverTimestamp() : Date.now(),
+      isAccepted: false
+    };
+
+    if (this.isConfigured && this.db) {
+      try {
+        await this.db.collection('doubts').doc(doubtId).collection('answers').doc(answerId).set(answerData);
+        return answerId;
+      } catch (err) {
+        console.warn('[Firebase] Add answer error:', err);
+      }
+    }
+
+    // Local fallback
+    try {
+      const key = `lockedin_doubt_answers_${doubtId}`;
+      const answers = JSON.parse(localStorage.getItem(key) || '[]');
+      answers.push({ ...answerData, createdAt: Date.now() });
+      localStorage.setItem(key, JSON.stringify(answers));
+      const ch = this.getChannel('doubts_global');
+      ch.postMessage({ type: 'ANSWER_ADDED', doubtId, answer: answerData });
+    } catch (e) {}
+    return answerId;
+  }
+
+  listenToDoubtAnswers(doubtId, callback) {
+    if (this.isConfigured && this.db) {
+      return this.db.collection('doubts').doc(doubtId).collection('answers')
+        .orderBy('createdAt', 'asc')
+        .onSnapshot((snapshot) => {
+          const list = [];
+          snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+          callback(list);
+        }, (err) => {
+          console.warn('[Firebase] Answers listener error:', err);
+        });
+    }
+
+    // Local fallback
+    const key = `lockedin_doubt_answers_${doubtId}`;
+    const loadLocal = () => {
+      try {
+        const answers = JSON.parse(localStorage.getItem(key) || '[]');
+        callback(answers);
+      } catch (e) {
+        callback([]);
+      }
+    };
+    loadLocal();
+    const ch = this.getChannel('doubts_global');
+    const handler = (e) => {
+      if (e.data && e.data.doubtId === doubtId) loadLocal();
+    };
+    ch.addEventListener('message', handler);
+    return () => ch.removeEventListener('message', handler);
+  }
+
+  async acceptDoubtAnswer(doubtId, answerId, solverUid) {
+    if (this.isConfigured && this.db) {
+      try {
+        await this.db.collection('doubts').doc(doubtId).update({
+          status: 'RESOLVED',
+          acceptedAnswerId: answerId,
+          solverUid: solverUid,
+          updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await this.db.collection('doubts').doc(doubtId).collection('answers').doc(answerId).update({
+          isAccepted: true,
+          updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        });
+        return true;
+      } catch (err) {
+        console.warn('[Firebase] Accept answer error:', err);
+      }
+    }
+
+    // Local fallback
+    try {
+      const doubts = JSON.parse(localStorage.getItem('lockedin_local_doubts') || '[]');
+      const d = doubts.find(x => x.doubtId === doubtId);
+      if (d) {
+        d.status = 'RESOLVED';
+        d.acceptedAnswerId = answerId;
+        d.solverUid = solverUid;
+        localStorage.setItem('lockedin_local_doubts', JSON.stringify(doubts));
+      }
+      const key = `lockedin_doubt_answers_${doubtId}`;
+      const answers = JSON.parse(localStorage.getItem(key) || '[]');
+      const a = answers.find(x => x.answerId === answerId);
+      if (a) {
+        a.isAccepted = true;
+        localStorage.setItem(key, JSON.stringify(answers));
+      }
+      const ch = this.getChannel('doubts_global');
+      ch.postMessage({ type: 'ANSWER_ACCEPTED', doubtId, answerId, solverUid });
+    } catch (e) {}
+    return true;
+  }
 }
 
 // Global instance

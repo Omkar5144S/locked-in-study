@@ -13,8 +13,16 @@ class LeaderboardManager {
       cleanStudyMinutes: parseInt(localStorage.getItem('lockedin_clean_minutes') || '45', 10),
       shameCount: parseInt(localStorage.getItem('lockedin_shame_count') || '0', 10),
       topTrigger: localStorage.getItem('lockedin_top_trigger') || 'None',
-      pointsLost: parseInt(localStorage.getItem('lockedin_points_lost') || '0', 10)
+      pointsLost: parseInt(localStorage.getItem('lockedin_points_lost') || '0', 10),
+      xp: parseInt(localStorage.getItem('lockedin_xp') || '0', 10),
+      coins: parseInt(localStorage.getItem('lockedin_coins') || '50', 10),
+      dailyStreak: parseInt(localStorage.getItem('lockedin_daily_streak') || '1', 10),
+      lastStudyDate: localStorage.getItem('lockedin_last_study_date') || new Date().toISOString().split('T')[0],
+      activePet: localStorage.getItem('lockedin_active_pet') || 'cat',
+      unlockedBadges: JSON.parse(localStorage.getItem('lockedin_unlocked_badges') || '["FOUNDING_SCHOLAR"]'),
+      inventory: JSON.parse(localStorage.getItem('lockedin_inventory') || '{"pets":["cat"],"frames":[],"themes":[]}')
     };
+    this.currentUser.level = Math.floor(this.currentUser.xp / 500) + 1;
 
     this.defaultSeedData = [];
     this.initStorage();
@@ -37,6 +45,12 @@ class LeaderboardManager {
     localStorage.setItem('lockedin_shame_count', this.currentUser.shameCount.toString());
     localStorage.setItem('lockedin_top_trigger', this.currentUser.topTrigger);
     localStorage.setItem('lockedin_points_lost', this.currentUser.pointsLost.toString());
+    localStorage.setItem('lockedin_xp', (this.currentUser.xp || 0).toString());
+    localStorage.setItem('lockedin_coins', (this.currentUser.coins || 0).toString());
+    localStorage.setItem('lockedin_daily_streak', (this.currentUser.dailyStreak || 1).toString());
+    localStorage.setItem('lockedin_last_study_date', this.currentUser.lastStudyDate || '');
+    localStorage.setItem('lockedin_active_pet', this.currentUser.activePet || 'cat');
+    localStorage.setItem('lockedin_inventory', JSON.stringify(this.currentUser.inventory || { pets: ['cat'], frames: [], themes: [] }));
 
     // Update in user list
     const users = this.getAllUsers();
@@ -124,6 +138,117 @@ class LeaderboardManager {
       const hrs = Math.floor(this.currentUser.cleanStudyMinutes / 60);
       const mins = this.currentUser.cleanStudyMinutes % 60;
       cleanTimeEl.textContent = `${hrs}h ${mins}m`;
+    }
+    const streakBadge = document.getElementById('user-streak-badge');
+    if (streakBadge) {
+      streakBadge.textContent = `🔥 ${this.currentUser.dailyStreak || 1} Day`;
+    }
+    const gamificationPill = document.getElementById('user-gamification-pill');
+    if (gamificationPill) {
+      gamificationPill.textContent = `⭐ Lvl ${this.currentUser.level || 1} | 🔥 ${this.currentUser.dailyStreak || 1}d | 🪙 ${this.currentUser.coins || 0}`;
+    }
+    const petEl = document.getElementById('study-pet-hud');
+    if (petEl) {
+      const petMap = {
+        cat: { icon: '🐱', name: 'Pixel Cat' },
+        owl: { icon: '🦉', name: 'Cyber Owl' },
+        shiba: { icon: '🐕', name: 'Shiba Inu' }
+      };
+      const p = petMap[this.currentUser.activePet] || petMap.cat;
+      petEl.innerHTML = `<span class="pet-icon">${p.icon}</span> <span class="pet-name">${p.name}</span>`;
+      petEl.title = `Your Study Companion: ${p.name}`;
+    }
+  }
+
+  // Gamification Economy
+  awardPomodoroComplete(focusMinutes = 25) {
+    let coinsEarned = 50;
+    let xpEarned = 100;
+    if (focusMinutes >= 90) {
+      coinsEarned = 180;
+      xpEarned = 360;
+    } else if (focusMinutes >= 60) {
+      coinsEarned = 120;
+      xpEarned = 240;
+    } else if (focusMinutes >= 50) {
+      coinsEarned = 100;
+      xpEarned = 200;
+    }
+
+    this.currentUser.totalPoints += 25;
+    this.currentUser.coins = (this.currentUser.coins || 0) + coinsEarned;
+    this.currentUser.xp = (this.currentUser.xp || 0) + xpEarned;
+
+    // Daily streak logic
+    const today = new Date().toISOString().split('T')[0];
+    if (this.currentUser.lastStudyDate !== today) {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      if (this.currentUser.lastStudyDate === yesterday) {
+        this.currentUser.dailyStreak = (this.currentUser.dailyStreak || 0) + 1;
+      } else if (!this.currentUser.lastStudyDate) {
+        this.currentUser.dailyStreak = 1;
+      }
+      this.currentUser.lastStudyDate = today;
+    }
+
+    // Level progression (500 XP per level)
+    const oldLevel = this.currentUser.level || 1;
+    this.currentUser.level = Math.floor(this.currentUser.xp / 500) + 1;
+    const leveledUp = this.currentUser.level > oldLevel;
+
+    this.saveCurrentUser();
+    this.renderHUD();
+    this.triggerPetCelebration();
+
+    return { coinsEarned, xpEarned, leveledUp, newLevel: this.currentUser.level };
+  }
+
+  awardDoubtSolved(solverUid) {
+    if (solverUid === this.currentUser.uid) {
+      this.currentUser.coins = (this.currentUser.coins || 0) + 50;
+      this.currentUser.xp = (this.currentUser.xp || 0) + 100;
+      this.currentUser.level = Math.floor(this.currentUser.xp / 500) + 1;
+      this.saveCurrentUser();
+      this.renderHUD();
+      this.triggerPetCelebration();
+    }
+  }
+
+  spendCoins(amount) {
+    if ((this.currentUser.coins || 0) < amount) return false;
+    this.currentUser.coins -= amount;
+    this.saveCurrentUser();
+    this.renderHUD();
+    return true;
+  }
+
+  buyItem(type, itemId, cost) {
+    if (!this.spendCoins(cost)) return false;
+    if (!this.currentUser.inventory) this.currentUser.inventory = { pets: ['cat'], frames: [], themes: [] };
+    if (!this.currentUser.inventory[type]) this.currentUser.inventory[type] = [];
+    if (!this.currentUser.inventory[type].includes(itemId)) {
+      this.currentUser.inventory[type].push(itemId);
+    }
+    this.saveCurrentUser();
+    return true;
+  }
+
+  setActivePet(petId) {
+    this.currentUser.activePet = petId;
+    localStorage.setItem('lockedin_active_pet', petId);
+    this.saveCurrentUser();
+    this.renderHUD();
+  }
+
+  triggerPetCelebration() {
+    const petEl = document.getElementById('study-pet-hud');
+    if (petEl) {
+      petEl.classList.remove('studying', 'idle');
+      petEl.classList.add('celebrating');
+      setTimeout(() => {
+        petEl.classList.remove('celebrating');
+        petEl.classList.add('studying');
+      }, 4000);
     }
   }
 

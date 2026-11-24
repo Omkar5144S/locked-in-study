@@ -28,6 +28,8 @@ class WebRTCRoomManager {
     // Audio & Status
     this.isMicMuted = true;
     this.isHandRaised = false;
+    this.wakeLock = null;
+    this._wakeLockListener = null;
 
     // RTC Configuration with STUN & open TURN fallbacks
     this.rtcConfig = {
@@ -271,6 +273,7 @@ class WebRTCRoomManager {
 
     // Update Room Code & Share Bar
     this.renderRoomCodeBar();
+    this.requestWakeLock();
 
     const callSign = localStorage.getItem('lockedin_display_name') || 'Scholar_' + this.peerId.slice(-4);
     const isVerified = localStorage.getItem('lockedin_is_verified') === 'true';
@@ -894,8 +897,40 @@ class WebRTCRoomManager {
     }
   }
 
+  async requestWakeLock() {
+    if ('wakeLock' in navigator) {
+      try {
+        this.wakeLock = await navigator.wakeLock.request('screen');
+        console.log('[WebRTC] Screen WakeLock acquired.');
+        this.wakeLock.addEventListener('release', () => {
+          console.log('[WebRTC] Screen WakeLock released.');
+        });
+      } catch (err) {
+        console.warn('[WebRTC] WakeLock request error:', err);
+      }
+    }
+    if (!this._wakeLockListener) {
+      this._wakeLockListener = async () => {
+        if (this.roomId && document.visibilityState === 'visible') {
+          await this.requestWakeLock();
+        }
+      };
+      document.addEventListener('visibilitychange', this._wakeLockListener);
+    }
+  }
+
+  releaseWakeLock() {
+    if (this.wakeLock) {
+      try {
+        this.wakeLock.release();
+      } catch (e) {}
+      this.wakeLock = null;
+    }
+  }
+
   leaveStudyRoom() {
     console.log('[WebRTC] Leaving study room:', this.roomId);
+    this.releaseWakeLock();
 
     if (this.pingInterval) {
       clearInterval(this.pingInterval);

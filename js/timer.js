@@ -101,14 +101,21 @@ class StudyTimerManager {
     if (this.mode === 'FOCUS') {
       // Completed Focus Block!
       if (this.triggersInCurrentBlock === 0) {
-        // VICTORY TRIGGER: +25 bonus points & victory sound
-        if (window.Leaderboard) {
+        // VICTORY TRIGGER: bonus points, coins & XP
+        let rewardMsg = '+25 bonus points!';
+        if (window.Leaderboard && window.Leaderboard.awardPomodoroComplete) {
+          const res = window.Leaderboard.awardPomodoroComplete(this.focusDurationMinutes);
+          rewardMsg = `+${res.coinsEarned} 🪙 Coins, +${res.xpEarned} XP!`;
+          if (res.leveledUp) {
+            rewardMsg += ` 🎉 LEVELED UP TO LVL ${res.newLevel}!`;
+          }
+        } else if (window.Leaderboard) {
           window.Leaderboard.awardBlockVictoryBonus();
         }
         if (window.Soundboard) {
           window.Soundboard.playTrigger('FOCUS_BLOCK_VICTORY', true);
         }
-        this.showToast('🏆 FOCUS BLOCK VICTORY! Completed with ZERO distractions (+25 bonus points!)');
+        this.showToast(`🏆 FOCUS BLOCK VICTORY! Distraction-Free (${rewardMsg})`);
       }
 
       // Auto-clear any lingering shame stamp on focus block completion

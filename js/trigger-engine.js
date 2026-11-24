@@ -50,14 +50,21 @@ class TriggerEngine {
     // Dynamic Shame Redemption Tracking
     this.isCurrentlyShamed = false;
     this.shameCleanSeconds = 0;
+    this.isTabBlockerEnabled = localStorage.getItem('lockedin_tab_blocker_enabled') !== 'false';
 
     this.initEventListeners();
+  }
+
+  setTabBlockerEnabled(enabled) {
+    this.isTabBlockerEnabled = !!enabled;
+    localStorage.setItem('lockedin_tab_blocker_enabled', this.isTabBlockerEnabled ? 'true' : 'false');
   }
 
   initEventListeners() {
     // 1. Tab visibility change (TAB_SWITCH_HIDDEN)
     document.addEventListener('visibilitychange', () => {
       if (!this.isFocusActive()) return;
+      if (!this.isTabBlockerEnabled) return;
       if (document.hidden) {
         this.triggerCandidate('TAB_SWITCH_HIDDEN', 'You switched browser tabs or minimized the app!');
       }
@@ -203,7 +210,7 @@ class TriggerEngine {
       if (window.WebRTCRoom && window.WebRTCRoom.isDualFeedActive && screenVideoEl && screenVideoEl.readyState >= 2) {
         this.runScreenDiffCheck(screenVideoEl);
       }
-    }, 2500);
+    }, 1500);
   }
 
   stopMonitoring() {
@@ -394,7 +401,7 @@ class TriggerEngine {
     if (this.currentGraceTimer) return; // Already in grace countdown
 
     this.activeGraceTrigger = { id: triggerId, reason: reasonText };
-    this.graceSecondsRemaining = 5;
+    this.graceSecondsRemaining = 8;
 
     // Show Grace Banner UI
     const banner = document.getElementById('grace-warning-banner');
@@ -403,13 +410,13 @@ class TriggerEngine {
 
     if (banner) {
       if (reasonEl) reasonEl.textContent = reasonText;
-      if (countEl) countEl.textContent = '5';
+      if (countEl) countEl.textContent = '8';
       banner.classList.remove('hidden');
       banner.classList.add('flash-amber');
     }
 
     // Update local tile HUD status pill
-    this.updateLocalTileStatus('GRACE WARNING (5s)', 'status-grace');
+    this.updateLocalTileStatus('GRACE WARNING (8s)', 'status-grace');
 
     // Beep warning tick
     if (window.Soundboard) {

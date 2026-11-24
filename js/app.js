@@ -61,6 +61,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const acceptInviteBtn = document.getElementById('btn-accept-invite');
     const cleanRoomParam = roomParam.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
 
+    // Hide lobby tabs to keep invite landing clean and focused
+    const terminalNav = document.querySelector('.amongus-terminal-nav');
+    if (terminalNav) terminalNav.style.display = 'none';
+
     if (inviteBanner && inviteRoomName) {
       inviteBanner.classList.remove('hidden');
       inviteRoomName.textContent = cleanRoomParam + (isPrivate ? ' (Private Room)' : ' (Public Lobby)');
@@ -670,6 +674,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 10. Admin Soundboard Studio Modal & Auth
   const openAdminBtn = document.getElementById('btn-open-admin');
+  if (openAdminBtn) {
+    if (urlParams.get('admin') === 'true') {
+      openAdminBtn.style.display = 'inline-flex';
+    } else {
+      openAdminBtn.style.display = 'none';
+    }
+  }
   const closeAdminBtn = document.getElementById('btn-close-admin');
   const adminModal = document.getElementById('admin-studio-modal');
   const adminAuthView = document.getElementById('admin-auth-view');
@@ -746,18 +757,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const isPassword = adminPinInput.type === 'password';
       adminPinInput.type = isPassword ? 'text' : 'password';
       togglePinVisibilityBtn.textContent = isPassword ? '🙈' : '👁️';
-    });
-  }
-
-  const forgotPinBtn = document.getElementById('btn-forgot-pin');
-  if (forgotPinBtn) {
-    forgotPinBtn.addEventListener('click', () => {
-      if (confirm('Reset Admin PIN to default (2027)? All your sound slots and audio files will remain safe.')) {
-        if (window.Soundboard) {
-          window.Soundboard.resetAdminPinToDefault();
-        }
-        unlockAdminStudioUI();
-      }
     });
   }
 
@@ -997,6 +996,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const noiseType = btn.getAttribute('data-noise');
 
       if (window.StudyNoise) {
+        window.StudyNoise.ensureAudio();
         if (noiseType === 'brown') window.StudyNoise.playBrownNoise();
         else if (noiseType === 'white') window.StudyNoise.playWhiteNoise();
         else if (noiseType === 'pink') window.StudyNoise.playPinkNoise();
@@ -1122,6 +1122,668 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     localStorage.setItem('lockedin_last_study_date', today);
     streakBadge.textContent = `🔥 ${streak} ${streak === 1 ? 'Day' : 'Days'}`;
+  }
+
+  // 15. Tab-Switch Blocker Toggle in Dock
+  const tabBlockerBtn = document.getElementById('toggle-tab-blocker-btn');
+  const tabBlockerLabel = document.getElementById('tab-blocker-label');
+  if (tabBlockerBtn && window.TriggerEngine) {
+    const updateTabBlockerUI = () => {
+      const isEnabled = window.TriggerEngine.isTabBlockerEnabled;
+      tabBlockerBtn.classList.toggle('tab-blocker-active', isEnabled);
+      tabBlockerBtn.classList.toggle('tab-blocker-inactive', !isEnabled);
+      if (tabBlockerLabel) tabBlockerLabel.textContent = isEnabled ? '🛡️ Tab Guard: ON' : '🛡️ Tab Guard: OFF';
+    };
+    updateTabBlockerUI();
+    tabBlockerBtn.addEventListener('click', () => {
+      window.TriggerEngine.setTabBlockerEnabled(!window.TriggerEngine.isTabBlockerEnabled);
+      updateTabBlockerUI();
+      showToast(window.TriggerEngine.isTabBlockerEnabled ? 'Tab Guard Active (8s grace)' : 'Tab Guard Paused');
+    });
+  }
+
+  // 16. Session To-Do List Widget
+  const todoWidget = document.getElementById('session-todo-widget');
+  const todoToggleBtn = document.getElementById('todo-toggle-btn');
+  const todoInput = document.getElementById('todo-input');
+  const addTodoBtn = document.getElementById('btn-add-todo');
+  const todoList = document.getElementById('todo-list');
+  const todoProgressCount = document.getElementById('todo-progress-count');
+
+  let sessionTodos = [];
+  try {
+    sessionTodos = JSON.parse(localStorage.getItem('lockedin_session_todos') || '[]');
+  } catch (e) {
+    sessionTodos = [];
+  }
+
+  function renderTodos() {
+    if (!todoList) return;
+    todoList.innerHTML = '';
+    const total = sessionTodos.length;
+    const doneCount = sessionTodos.filter(t => t.done).length;
+    if (todoProgressCount) {
+      todoProgressCount.textContent = `${doneCount}/${total}`;
+      todoProgressCount.style.color = (doneCount === total && total > 0) ? 'var(--apple-green)' : 'inherit';
+    }
+
+    if (sessionTodos.length === 0) {
+      todoList.innerHTML = '<li style="font-size:0.75rem; color:var(--text-muted); text-align:center; padding:8px;">No tasks added for this study block.</li>';
+      return;
+    }
+
+    sessionTodos.forEach((task, idx) => {
+      const li = document.createElement('li');
+      li.className = `todo-item ${task.done ? 'done' : ''}`;
+      li.innerHTML = `
+        <label style="display:flex; align-items:center; gap:8px; flex:1; cursor:pointer;">
+          <input type="checkbox" class="todo-check" data-idx="${idx}" ${task.done ? 'checked' : ''}>
+          <span style="word-break:break-word;">${escapeHtml(task.text)}</span>
+        </label>
+        <button type="button" class="todo-del-btn" data-idx="${idx}" title="Delete task">&times;</button>
+      `;
+      todoList.appendChild(li);
+    });
+
+    todoList.querySelectorAll('.todo-check').forEach(chk => {
+      chk.addEventListener('change', (e) => {
+        const i = parseInt(e.target.dataset.idx, 10);
+        if (sessionTodos[i]) {
+          sessionTodos[i].done = e.target.checked;
+          saveTodos();
+          renderTodos();
+          if (sessionTodos[i].done && window.Leaderboard) {
+            window.Leaderboard.awardCleanStudyMinute();
+            showToast('✅ Task completed (+2 study points!)');
+          }
+        }
+      });
+    });
+
+    todoList.querySelectorAll('.todo-del-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const i = parseInt(e.target.dataset.idx, 10);
+        sessionTodos.splice(i, 1);
+        saveTodos();
+        renderTodos();
+      });
+    });
+  }
+
+  function saveTodos() {
+    localStorage.setItem('lockedin_session_todos', JSON.stringify(sessionTodos));
+  }
+
+  function addTodoItem() {
+    if (!todoInput) return;
+    const text = todoInput.value.trim();
+    if (!text) return;
+    sessionTodos.push({ text, done: false, id: Date.now() });
+    todoInput.value = '';
+    saveTodos();
+    renderTodos();
+  }
+
+  if (todoToggleBtn && todoWidget) {
+    todoToggleBtn.addEventListener('click', () => {
+      todoWidget.classList.toggle('collapsed');
+    });
+  }
+
+  if (addTodoBtn) {
+    addTodoBtn.addEventListener('click', addTodoItem);
+  }
+
+  if (todoInput) {
+    todoInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addTodoItem();
+      }
+    });
+  }
+  renderTodos();
+
+  // 17. Coin Shop & Study Pets Modal
+  const openShopBtn = document.getElementById('btn-open-shop');
+  const closeShopBtn = document.getElementById('btn-close-shop');
+  const shopBackdrop = document.getElementById('coin-shop-backdrop');
+  const shopModal = document.getElementById('coin-shop-modal');
+  const shopUserCoins = document.getElementById('shop-user-coins');
+
+  function updateShopUI() {
+    if (!window.Leaderboard) return;
+    if (shopUserCoins) {
+      shopUserCoins.textContent = `🪙 ${window.Leaderboard.currentUser.coins || 0} Coins`;
+    }
+    const inv = window.Leaderboard.currentUser.inventory || { pets: ['cat'], frames: [], themes: [] };
+    const activePet = window.Leaderboard.currentUser.activePet || 'cat';
+
+    // Update Pet buttons
+    document.querySelectorAll('#shop-tab-pets .shop-card').forEach(card => {
+      const id = card.dataset.item;
+      const btn = card.querySelector('.shop-action-btn');
+      if (id === activePet) {
+        btn.className = 'shop-action-btn equip-btn';
+        btn.textContent = 'Equipped';
+      } else if (inv.pets && inv.pets.includes(id)) {
+        btn.className = 'shop-action-btn equip-btn';
+        btn.textContent = 'Equip';
+        btn.onclick = () => {
+          window.Leaderboard.setActivePet(id);
+          updateShopUI();
+          showToast(`Equipped companion: ${id.toUpperCase()}`);
+        };
+      } else {
+        btn.className = 'shop-action-btn buy-btn';
+        btn.textContent = 'Buy';
+        btn.onclick = () => {
+          const cost = parseInt(card.dataset.cost, 10);
+          if (window.Leaderboard.buyItem('pets', id, cost)) {
+            window.Leaderboard.setActivePet(id);
+            updateShopUI();
+            showToast(`Unlocked & equipped companion: ${id.toUpperCase()}! 🎉`);
+          } else {
+            showToast('⚠️ Not enough coins! Complete focus sessions to earn coins.');
+          }
+        };
+      }
+    });
+
+    // Update Frame buttons
+    document.querySelectorAll('#shop-tab-frames .shop-card').forEach(card => {
+      const id = card.dataset.item;
+      const btn = card.querySelector('.shop-action-btn');
+      const isOwned = inv.frames && inv.frames.includes(id);
+      if (isOwned) {
+        btn.className = 'shop-action-btn owned-btn';
+        btn.textContent = 'Owned';
+      } else {
+        btn.className = 'shop-action-btn buy-btn';
+        btn.textContent = 'Buy';
+        btn.onclick = () => {
+          const cost = parseInt(card.dataset.cost, 10);
+          if (window.Leaderboard.buyItem('frames', id, cost)) {
+            updateShopUI();
+            showToast(`Unlocked frame: ${card.querySelector('h4').textContent}! ✨`);
+          } else {
+            showToast('⚠️ Not enough coins!');
+          }
+        };
+      }
+    });
+
+    // Update Theme buttons
+    document.querySelectorAll('#shop-tab-themes .shop-card').forEach(card => {
+      const id = card.dataset.item;
+      const btn = card.querySelector('.shop-action-btn');
+      const isOwned = inv.themes && inv.themes.includes(id);
+      if (isOwned) {
+        btn.className = 'shop-action-btn owned-btn';
+        btn.textContent = 'Owned';
+      } else {
+        btn.className = 'shop-action-btn buy-btn';
+        btn.textContent = 'Buy';
+        btn.onclick = () => {
+          const cost = parseInt(card.dataset.cost, 10);
+          if (window.Leaderboard.buyItem('themes', id, cost)) {
+            updateShopUI();
+            showToast(`Unlocked theme: ${card.querySelector('h4').textContent}! 🎨`);
+          } else {
+            showToast('⚠️ Not enough coins!');
+          }
+        };
+      }
+    });
+  }
+
+  if (openShopBtn && shopModal) {
+    openShopBtn.addEventListener('click', () => {
+      updateShopUI();
+      shopModal.classList.remove('hidden');
+    });
+  }
+  if (closeShopBtn && shopModal) closeShopBtn.addEventListener('click', () => shopModal.classList.add('hidden'));
+  if (shopBackdrop && shopModal) shopBackdrop.addEventListener('click', () => shopModal.classList.add('hidden'));
+
+  document.querySelectorAll('.shop-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.shop-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const target = btn.dataset.tab;
+      document.querySelectorAll('.shop-tab-content').forEach(c => c.classList.add('hidden'));
+      const activeContent = document.getElementById(`shop-tab-${target}`);
+      if (activeContent) activeContent.classList.remove('hidden');
+    });
+  });
+
+  // 18. Peer Doubt Board & BYOK Gemini AI Tutor
+  const openDoubtsBtn = document.getElementById('btn-open-doubts');
+  const closeDoubtsBtn = document.getElementById('btn-close-doubts');
+  const doubtsDrawer = document.getElementById('doubt-board-drawer');
+  const submitDoubtBtn = document.getElementById('btn-submit-doubt');
+  const doubtSubjectInput = document.getElementById('doubt-subject-input');
+  const doubtQuestionInput = document.getElementById('doubt-question-input');
+  const doubtImageFile = document.getElementById('doubt-image-file');
+  const doubtImageFilename = document.getElementById('doubt-image-filename');
+  const doubtImagePreviewBox = document.getElementById('doubt-image-preview-box');
+  const doubtImagePreview = document.getElementById('doubt-image-preview');
+  const doubtsListEl = document.getElementById('doubts-list');
+
+  let activeDoubtFilter = 'all';
+  let cachedDoubts = [];
+  let compressedDoubtImage = '';
+
+  // Client-side Canvas Image Compression (<90KB, maxWidth 800px)
+  function compressImageClient(file, maxWidth = 800, quality = 0.65) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = reject;
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onerror = reject;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve(dataUrl);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  if (doubtImageFile) {
+    doubtImageFile.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (doubtImageFilename) doubtImageFilename.textContent = file.name;
+      try {
+        compressedDoubtImage = await compressImageClient(file);
+        if (doubtImagePreview && doubtImagePreviewBox) {
+          doubtImagePreview.src = compressedDoubtImage;
+          doubtImagePreviewBox.classList.remove('hidden');
+        }
+      } catch (err) {
+        console.warn('[Doubt] Image compression error:', err);
+      }
+    });
+  }
+
+  if (openDoubtsBtn && doubtsDrawer) {
+    openDoubtsBtn.addEventListener('click', () => {
+      doubtsDrawer.classList.remove('hidden');
+    });
+  }
+  if (closeDoubtsBtn && doubtsDrawer) {
+    closeDoubtsBtn.addEventListener('click', () => {
+      doubtsDrawer.classList.add('hidden');
+    });
+  }
+
+  // Switch between Peer Doubts and AI Tutor tabs
+  document.querySelectorAll('.doubt-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.doubt-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+      document.querySelectorAll('.doubt-tab-view').forEach(v => v.classList.add('hidden'));
+      const activeView = document.getElementById(`doubt-tab-${tab}`);
+      if (activeView) activeView.classList.remove('hidden');
+    });
+  });
+
+  // Filter doubts (All | Open | Resolved)
+  document.querySelectorAll('.doubt-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.doubt-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeDoubtFilter = btn.dataset.filter;
+      renderDoubtCards(cachedDoubts);
+    });
+  });
+
+  function renderDoubtCards(doubts) {
+    cachedDoubts = doubts || [];
+    if (!doubtsListEl) return;
+    doubtsListEl.innerHTML = '';
+
+    let filtered = cachedDoubts;
+    if (activeDoubtFilter === 'open') {
+      filtered = cachedDoubts.filter(d => d.status === 'OPEN');
+    } else if (activeDoubtFilter === 'resolved') {
+      filtered = cachedDoubts.filter(d => d.status === 'RESOLVED');
+    }
+
+    if (filtered.length === 0) {
+      doubtsListEl.innerHTML = '<div class="empty-state">No doubts matching current filter. Post one above!</div>';
+      return;
+    }
+
+    filtered.forEach(d => {
+      const card = document.createElement('div');
+      card.className = 'doubt-card';
+      const isOpen = d.status === 'OPEN';
+      card.innerHTML = `
+        <div class="doubt-card-top">
+          <span class="doubt-subject-badge">${escapeHtml(d.subject || 'Study Question')}</span>
+          <span class="${isOpen ? 'doubt-status-open' : 'doubt-status-resolved'}">
+            ${isOpen ? '⏳ Open (20 🪙 Bounty)' : '✅ Solved'}
+          </span>
+        </div>
+        <div class="doubt-card-text">${escapeHtml(d.questionText || '')}</div>
+        <div class="doubt-card-footer">
+          <span>By ${escapeHtml(d.authorCallSign || 'Scholar')}</span>
+          <span style="color:var(--apple-blue); font-weight:600;">View & Solve ➔</span>
+        </div>
+      `;
+      card.addEventListener('click', () => openDoubtDetail(d));
+      doubtsListEl.appendChild(card);
+    });
+  }
+
+  // Real-time listener for doubts
+  if (window.FirebaseSync) {
+    window.FirebaseSync.listenToDoubts((doubts) => {
+      renderDoubtCards(doubts);
+    });
+  }
+
+  // Post doubt
+  if (submitDoubtBtn) {
+    submitDoubtBtn.addEventListener('click', async () => {
+      const subject = (doubtSubjectInput ? doubtSubjectInput.value : '').trim();
+      const questionText = (doubtQuestionInput ? doubtQuestionInput.value : '').trim();
+      if (!questionText) {
+        showToast('⚠️ Please write your question or doubt first.');
+        return;
+      }
+
+      // Check coins (cost 20)
+      if (window.Leaderboard && !window.Leaderboard.spendCoins(20)) {
+        showToast('⚠️ Posting a community doubt costs 20 Coins. Finish a focus block to earn coins!');
+        return;
+      }
+
+      submitDoubtBtn.disabled = true;
+      submitDoubtBtn.textContent = 'Posting...';
+
+      try {
+        await window.FirebaseSync.createDoubt({
+          subject: subject || 'General Doubt',
+          questionText: questionText,
+          imageUrl: compressedDoubtImage || '',
+          bountyCoins: 20
+        });
+
+        showToast('✅ Doubt posted with 20 coin bounty!');
+        if (doubtSubjectInput) doubtSubjectInput.value = '';
+        if (doubtQuestionInput) doubtQuestionInput.value = '';
+        if (doubtImageFilename) doubtImageFilename.textContent = '';
+        if (doubtImagePreviewBox) doubtImagePreviewBox.classList.add('hidden');
+        compressedDoubtImage = '';
+      } catch (err) {
+        showToast('⚠️ Failed to post doubt. Try again.');
+      } finally {
+        submitDoubtBtn.disabled = false;
+        submitDoubtBtn.textContent = 'Post Doubt (20 🪙)';
+      }
+    });
+  }
+
+  // Doubt Detail Modal & Solution Answering
+  const doubtDetailModal = document.getElementById('doubt-detail-modal');
+  const closeDoubtDetailBtn = document.getElementById('btn-close-doubt-detail');
+  const doubtDetailBackdrop = document.getElementById('doubt-detail-backdrop');
+  const doubtDetailSubject = document.getElementById('doubt-detail-subject');
+  const doubtDetailAuthor = document.getElementById('doubt-detail-author');
+  const doubtDetailQuestion = document.getElementById('doubt-detail-question');
+  const doubtDetailImageBox = document.getElementById('doubt-detail-image-box');
+  const doubtDetailImage = document.getElementById('doubt-detail-image');
+  const doubtAnswersList = document.getElementById('doubt-answers-list');
+  const doubtAnswerInput = document.getElementById('doubt-answer-input');
+  const submitAnswerBtn = document.getElementById('btn-submit-answer');
+
+  let currentActiveDoubt = null;
+  let unsubscribeAnswers = null;
+
+  function openDoubtDetail(doubt) {
+    currentActiveDoubt = doubt;
+    if (doubtDetailSubject) doubtDetailSubject.textContent = doubt.subject || 'Doubt Details';
+    if (doubtDetailAuthor) doubtDetailAuthor.textContent = `Asked by ${doubt.authorCallSign || 'Scholar'} • Status: ${doubt.status}`;
+    if (doubtDetailQuestion) doubtDetailQuestion.textContent = doubt.questionText || '';
+
+    if (doubt.imageUrl && doubtDetailImageBox && doubtDetailImage) {
+      doubtDetailImage.src = doubt.imageUrl;
+      doubtDetailImageBox.classList.remove('hidden');
+    } else if (doubtDetailImageBox) {
+      doubtDetailImageBox.classList.add('hidden');
+    }
+
+    if (unsubscribeAnswers) unsubscribeAnswers();
+    if (window.FirebaseSync) {
+      unsubscribeAnswers = window.FirebaseSync.listenToDoubtAnswers(doubt.doubtId, (answers) => {
+        renderDoubtAnswers(answers, doubt);
+      });
+    }
+
+    if (doubtDetailModal) doubtDetailModal.classList.remove('hidden');
+  }
+
+  function renderDoubtAnswers(answers, doubt) {
+    if (!doubtAnswersList) return;
+    doubtAnswersList.innerHTML = '';
+    const myUid = (window.FirebaseSync && window.FirebaseSync.currentUser) ? window.FirebaseSync.currentUser.uid : '';
+    const isAuthor = (myUid && doubt.authorUid === myUid);
+
+    if (!answers || answers.length === 0) {
+      doubtAnswersList.innerHTML = '<div class="empty-state">No answers submitted yet. Provide a solution below!</div>';
+      return;
+    }
+
+    answers.forEach(a => {
+      const item = document.createElement('div');
+      item.className = `doubt-answer-item ${a.isAccepted ? 'accepted' : ''}`;
+      item.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <strong style="font-size:0.8rem;">${escapeHtml(a.authorCallSign || 'Scholar')}</strong>
+          ${a.isAccepted ? '<span class="doubt-status-resolved">✓ ACCEPTED SOLUTION (+50 🪙)</span>' : ''}
+        </div>
+        <div style="font-size:0.85rem; line-height:1.4; white-space:pre-wrap; margin-bottom:6px;">${escapeHtml(a.answerText || '')}</div>
+        ${(isAuthor && !a.isAccepted && doubt.status !== 'RESOLVED') ? `
+          <div style="display:flex; justify-content:flex-end;">
+            <button type="button" class="btn-timer btn-play accept-btn" data-aid="${a.answerId}" data-suid="${a.authorUid}" style="padding:3px 10px; font-size:0.75rem;">Accept Solution ✓ (+50 🪙)</button>
+          </div>
+        ` : ''}
+      `;
+
+      const acceptBtn = item.querySelector('.accept-btn');
+      if (acceptBtn) {
+        acceptBtn.addEventListener('click', async () => {
+          await window.FirebaseSync.acceptDoubtAnswer(doubt.doubtId, a.answerId, a.authorUid);
+          if (window.Leaderboard) {
+            window.Leaderboard.awardDoubtSolved(a.authorUid);
+          }
+          showToast('🎉 Solution accepted! Bounty awarded to solver.');
+        });
+      }
+      doubtAnswersList.appendChild(item);
+    });
+  }
+
+  if (submitAnswerBtn && doubtAnswerInput) {
+    submitAnswerBtn.addEventListener('click', async () => {
+      const text = doubtAnswerInput.value.trim();
+      if (!text || !currentActiveDoubt) return;
+      submitAnswerBtn.disabled = true;
+      try {
+        await window.FirebaseSync.addDoubtAnswer(currentActiveDoubt.doubtId, text);
+        doubtAnswerInput.value = '';
+        showToast('Solution submitted!');
+      } catch (e) {
+        showToast('⚠️ Could not submit answer.');
+      } finally {
+        submitAnswerBtn.disabled = false;
+      }
+    });
+  }
+
+  if (closeDoubtDetailBtn && doubtDetailModal) {
+    closeDoubtDetailBtn.addEventListener('click', () => {
+      if (unsubscribeAnswers) unsubscribeAnswers();
+      doubtDetailModal.classList.add('hidden');
+    });
+  }
+  if (doubtDetailBackdrop && doubtDetailModal) {
+    doubtDetailBackdrop.addEventListener('click', () => {
+      if (unsubscribeAnswers) unsubscribeAnswers();
+      doubtDetailModal.classList.add('hidden');
+    });
+  }
+
+  // 19. BYOK Gemini AI Tutor Integration
+  const geminiKeyInput = document.getElementById('gemini-api-key-input');
+  const saveGeminiKeyBtn = document.getElementById('btn-save-gemini-key');
+  const geminiKeyStatus = document.getElementById('gemini-key-status');
+  const askGeminiBtn = document.getElementById('btn-ask-gemini');
+  const aiTutorQuestion = document.getElementById('ai-tutor-question');
+  const aiTutorImageFile = document.getElementById('ai-tutor-image-file');
+  const aiTutorImageFilename = document.getElementById('ai-tutor-image-filename');
+  const aiTutorImagePreviewBox = document.getElementById('ai-tutor-image-preview-box');
+  const aiTutorImagePreview = document.getElementById('ai-tutor-image-preview');
+  const aiTutorResponseBox = document.getElementById('ai-tutor-response-box');
+  const aiTutorOutput = document.getElementById('ai-tutor-output');
+  const copyAiResponseBtn = document.getElementById('btn-copy-ai-response');
+
+  let compressedAiImage = '';
+
+  function checkGeminiKeyStatus() {
+    const savedKey = localStorage.getItem('lockedin_gemini_api_key');
+    if (savedKey && geminiKeyStatus) {
+      geminiKeyStatus.textContent = '✓ Active';
+      geminiKeyStatus.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+      geminiKeyStatus.style.color = '#10b981';
+      if (geminiKeyInput) geminiKeyInput.value = savedKey;
+    } else if (geminiKeyStatus) {
+      geminiKeyStatus.textContent = 'Not Set';
+      geminiKeyStatus.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+      geminiKeyStatus.style.color = 'var(--apple-red)';
+    }
+  }
+  checkGeminiKeyStatus();
+
+  if (saveGeminiKeyBtn && geminiKeyInput) {
+    saveGeminiKeyBtn.addEventListener('click', () => {
+      const key = geminiKeyInput.value.trim();
+      if (!key) {
+        localStorage.removeItem('lockedin_gemini_api_key');
+        showToast('Gemini key removed.');
+      } else {
+        localStorage.setItem('lockedin_gemini_api_key', key);
+        showToast('Gemini key saved securely in browser storage! 🔑');
+      }
+      checkGeminiKeyStatus();
+    });
+  }
+
+  if (aiTutorImageFile) {
+    aiTutorImageFile.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (aiTutorImageFilename) aiTutorImageFilename.textContent = file.name;
+      try {
+        compressedAiImage = await compressImageClient(file, 800, 0.7);
+        if (aiTutorImagePreview && aiTutorImagePreviewBox) {
+          aiTutorImagePreview.src = compressedAiImage;
+          aiTutorImagePreviewBox.classList.remove('hidden');
+        }
+      } catch (err) {
+        console.warn('[AI Tutor] Image compression error:', err);
+      }
+    });
+  }
+
+  if (askGeminiBtn) {
+    askGeminiBtn.addEventListener('click', async () => {
+      const apiKey = localStorage.getItem('lockedin_gemini_api_key');
+      if (!apiKey) {
+        showToast('⚠️ Please enter and save your Gemini API key above first.');
+        return;
+      }
+      const question = (aiTutorQuestion ? aiTutorQuestion.value : '').trim();
+      if (!question) {
+        showToast('⚠️ Please enter a question or problem to explain.');
+        return;
+      }
+
+      askGeminiBtn.disabled = true;
+      askGeminiBtn.textContent = 'Thinking...';
+      if (aiTutorResponseBox) aiTutorResponseBox.classList.remove('hidden');
+      if (aiTutorOutput) aiTutorOutput.textContent = 'Analyzing question and generating step-by-step solution...';
+
+      try {
+        const parts = [
+          { text: "You are an expert, encouraging academic tutor in the LOCKED-IN study hall. Explain this concept or problem clearly, providing step-by-step reasoning, key formulas, and practical intuition:\n\n" + question }
+        ];
+
+        if (compressedAiImage) {
+          const match = compressedAiImage.match(/^data:(image\/[a-zA-Z]+);base64,(.+)$/);
+          if (match) {
+            parts.push({
+              inlineData: {
+                mimeType: match[1],
+                data: match[2]
+              }
+            });
+          }
+        }
+
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts }] })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error?.message || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
+        if (aiTutorOutput) {
+          aiTutorOutput.textContent = reply;
+        }
+        showToast('✓ Gemini Tutor explained the concept!');
+      } catch (err) {
+        console.error('[AI Tutor] Query error:', err);
+        if (aiTutorOutput) {
+          aiTutorOutput.textContent = `⚠️ Error querying Gemini API: ${err.message}. Please check your API key and network connection.`;
+        }
+      } finally {
+        askGeminiBtn.disabled = false;
+        askGeminiBtn.textContent = '⚡ Ask Gemini 2.5 Flash';
+      }
+    });
+  }
+
+  if (copyAiResponseBtn && aiTutorOutput) {
+    copyAiResponseBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(aiTutorOutput.textContent || '').then(() => {
+        showToast('Copied explanation to clipboard!');
+      }).catch(() => {});
+    });
   }
 
   // Initial HUD render

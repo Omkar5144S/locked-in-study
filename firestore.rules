@@ -502,15 +502,9 @@ service cloud.firestore {
           isValidParticipant(request.resource.data) &&
           areImmutableFieldsUnchanged(['userId', 'joinedAt']);
 
-        // User can remove their own participant doc, or room host can remove participant
+        // User can remove their own participant doc or admin
         allow delete: if isAuthenticated() &&
-          (
-            request.auth.uid == participantId ||
-            resource.data.userId == request.auth.uid ||
-            (exists(/databases/$(database)/documents/rooms/$(roomId)) &&
-             isRoomHost(get(/databases/$(database)/documents/rooms/$(roomId)).data)) ||
-            isAdmin()
-          );
+          (request.auth.uid == participantId || request.auth.uid == resource.data.userId || isAdmin());
       }
 
       // 2b. Subcollection: Deterministic Peer-Pair WebRTC signaling ({smallerId}_{largerId})
@@ -528,15 +522,9 @@ service cloud.firestore {
           areImmutableFieldsUnchanged(['createdAt', 'callerId', 'calleeId']) &&
           (resource.data.callerId == request.auth.uid || resource.data.calleeId == request.auth.uid);
 
-        // Participants or room host can clean up closed connections
+        // Participants or admin can clean up closed connections
         allow delete: if isAuthenticated() &&
-          (
-            resource.data.callerId == request.auth.uid ||
-            resource.data.calleeId == request.auth.uid ||
-            (exists(/databases/$(database)/documents/rooms/$(roomId)) &&
-             isRoomHost(get(/databases/$(database)/documents/rooms/$(roomId)).data)) ||
-            isAdmin()
-          );
+          (request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.calleeId || isAdmin());
 
         // ICE candidate exchange subcollections
         match /callerCandidates/{candidateId} {
@@ -565,14 +553,9 @@ service cloud.firestore {
         // Room events are append-only audit entries; updates disallowed
         allow update: if false;
 
-        // Sender, room host, or admin can prune events
+        // Sender or admin can prune events
         allow delete: if isAuthenticated() &&
-          (
-            resource.data.senderId == request.auth.uid ||
-            (exists(/databases/$(database)/documents/rooms/$(roomId)) &&
-             isRoomHost(get(/databases/$(database)/documents/rooms/$(roomId)).data)) ||
-            isAdmin()
-          );
+          (resource.data.senderId == request.auth.uid || isAdmin());
       }
     }
 
@@ -609,25 +592,15 @@ service cloud.firestore {
           request.resource.data.authorUid == request.auth.uid &&
           isValidAnswer(request.resource.data);
 
-        // Answer author or doubt author (accepting answer) can update; authorUid and createdAt immutable
+        // Answer author or admin can update; authorUid and createdAt immutable
         allow update: if isAuthenticated() &&
           isValidAnswer(request.resource.data) &&
           areImmutableFieldsUnchanged(['createdAt', 'authorUid']) &&
-          (
-            resource.data.authorUid == request.auth.uid ||
-            (exists(/databases/$(database)/documents/doubts/$(doubtId)) &&
-             get(/databases/$(database)/documents/doubts/$(doubtId)).data.authorUid == request.auth.uid) ||
-            isAdmin()
-          );
+          (resource.data.authorUid == request.auth.uid || isAdmin());
 
-        // Answer author, doubt author, or admin can delete an answer
+        // Answer author or admin can delete an answer
         allow delete: if isAuthenticated() &&
-          (
-            resource.data.authorUid == request.auth.uid ||
-            (exists(/databases/$(database)/documents/doubts/$(doubtId)) &&
-             get(/databases/$(database)/documents/doubts/$(doubtId)).data.authorUid == request.auth.uid) ||
-            isAdmin()
-          );
+          (resource.data.authorUid == request.auth.uid || isAdmin());
       }
     }
 

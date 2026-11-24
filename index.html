@@ -100,10 +100,17 @@
         <span>🎧 Noise / Music</span>
       </button>
       <span id="user-points-badge" class="user-points-badge">150 pts</span>
+      <span id="user-gamification-pill" class="chip-badge gamification-pill" title="Level, Streak & Coins">⭐ Lvl 1 | 🔥 1d | 🪙 50</span>
+      <button id="btn-open-shop" class="btn-icon-label" title="Coin Shop: Pets, Frames & Themes">
+        <span>🛍️ Shop</span>
+      </button>
+      <button id="btn-open-doubts" class="btn-icon-label" title="Peer Doubt Board & AI Tutor">
+        <span>💡 Doubts</span>
+      </button>
       <button id="btn-open-leaderboard" class="btn-icon-label" title="View Top Grinders & Wall of Shame">
         <span>🏆 Boards</span>
       </button>
-      <button id="btn-open-admin" class="btn-icon-label" title="Admin Soundboard Studio & Config">
+      <button id="btn-open-admin" class="btn-icon-label" style="display:none;" title="Admin Soundboard Studio & Config">
         <span>⚙️ Admin</span>
       </button>
     </div>
@@ -308,6 +315,9 @@
           </div>
           <div class="hud-bottom">
             <div id="local-timer-display" class="timer-display">25:00</div>
+            <div id="study-pet-hud" class="study-pet-hud studying" title="Your Study Pet">
+              <span class="pet-icon">🐱</span> <span class="pet-name">Pixel Cat</span>
+            </div>
             <span class="status-pill status-locked">LOCKED IN</span>
             <span id="local-hand-indicator" class="hand-indicator hidden">✋ Hand Raised</span>
           </div>
@@ -347,11 +357,33 @@
         <button id="raise-hand-btn" class="control-btn" title="Ask a study doubt">
           <span>✋ Raise Hand</span>
         </button>
+        <button id="toggle-tab-blocker-btn" class="control-btn tab-blocker-active" title="Toggle Tab-Switch Blocker (8s Grace Countdown)">
+          <span id="tab-blocker-label">🛡️ Tab Guard: ON</span>
+        </button>
         <button id="btn-leave-room-dock" class="control-btn" style="color:var(--apple-red); border-color:rgba(239, 68, 68, 0.4);" title="Leave Study Session">
           <span>🚪 Leave</span>
         </button>
       </div>
     </footer>
+
+    <!-- Session To-Do List Widget -->
+    <div id="session-todo-widget" class="session-todo-widget collapsed">
+      <div class="todo-header" id="todo-toggle-btn">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span>📝</span>
+          <strong>Session To-Do</strong>
+          <span id="todo-progress-count" class="chip-badge" style="font-size:0.75rem; padding:2px 8px;">0/0</span>
+        </div>
+        <button type="button" class="todo-chevron-btn" id="todo-chevron-icon">▲</button>
+      </div>
+      <div class="todo-body" id="todo-body">
+        <div class="todo-input-row">
+          <input type="text" id="todo-input" placeholder="Add focus task... (Press Enter)" maxlength="60" />
+          <button type="button" id="btn-add-todo" class="btn-timer btn-play" style="padding:4px 10px; font-size:0.8rem; border-radius:6px;">+ Add</button>
+        </div>
+        <ul id="todo-list" class="todo-list"></ul>
+      </div>
+    </div>
   </main>
 
   <!-- =========================================================
@@ -430,12 +462,6 @@
               <button id="admin-unlock-btn" class="btn-timer btn-play">Unlock</button>
             </div>
             <div id="admin-pin-feedback" style="font-size:0.8rem; margin-top:8px; min-height:1.2rem; color:var(--apple-red);"></div>
-          </div>
-
-          <div>
-            <button type="button" id="btn-forgot-pin" style="background:none; border:none; color:var(--apple-blue); font-size:0.78rem; text-decoration:underline; cursor:pointer;">
-              Forgot PIN? Emergency Reset to 2027
-            </button>
           </div>
         </div>
 
@@ -534,17 +560,267 @@
     </div>
   </div>
 
+  <!-- =========================================================
+       5. COIN SHOP & STUDY PETS MODAL
+       ========================================================= -->
+  <div id="coin-shop-modal" class="modal hidden">
+    <div class="modal-backdrop" id="coin-shop-backdrop"></div>
+    <div class="modal-card" style="max-width:580px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:1.4rem;">🛍️</span>
+          <div>
+            <h3>Scholar Coin Shop</h3>
+            <small style="color:var(--text-muted);">Spend study coins earned by finishing clean pomodoro sessions.</small>
+          </div>
+        </div>
+        <button id="btn-close-shop" class="modal-close-btn">&times;</button>
+      </div>
+
+      <div class="shop-balance-bar">
+        <span>Your Balance:</span>
+        <strong id="shop-user-coins" style="color:var(--apple-amber); font-size:1.1rem;">🪙 50 Coins</strong>
+      </div>
+
+      <div class="shop-tabs">
+        <button type="button" class="shop-tab-btn active" data-tab="pets">🐾 Study Pets</button>
+        <button type="button" class="shop-tab-btn" data-tab="frames">✨ Profile Frames</button>
+        <button type="button" class="shop-tab-btn" data-tab="themes">🎨 Themes</button>
+      </div>
+
+      <div class="shop-tab-content active" id="shop-tab-pets">
+        <div class="shop-grid">
+          <div class="shop-card" data-item="cat" data-cost="0" data-type="pets">
+            <div class="shop-item-preview">🐱</div>
+            <h4>Pixel Cat</h4>
+            <p>Purrs gently as you focus and celebrates with yarn confetti on victories.</p>
+            <div class="shop-card-footer">
+              <span class="shop-cost">🪙 Free (Default)</span>
+              <button type="button" class="shop-action-btn equip-btn" data-id="cat" data-type="pets">Equipped</button>
+            </div>
+          </div>
+          <div class="shop-card" data-item="owl" data-cost="500" data-type="pets">
+            <div class="shop-item-preview">🦉</div>
+            <h4>Cyber Owl</h4>
+            <p>Wide vigilant eyes track nocturnal study hours and night grinds.</p>
+            <div class="shop-card-footer">
+              <span class="shop-cost">🪙 500 Coins</span>
+              <button type="button" class="shop-action-btn buy-btn" data-id="owl" data-type="pets" data-cost="500">Buy</button>
+            </div>
+          </div>
+          <div class="shop-card" data-item="shiba" data-cost="500" data-type="pets">
+            <div class="shop-item-preview">🐕</div>
+            <h4>Shiba Inu</h4>
+            <p>Loyal companion sitting right next to your desk timer cheering you on.</p>
+            <div class="shop-card-footer">
+              <span class="shop-cost">🪙 500 Coins</span>
+              <button type="button" class="shop-action-btn buy-btn" data-id="shiba" data-type="pets" data-cost="500">Buy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="shop-tab-content hidden" id="shop-tab-frames">
+        <div class="shop-grid">
+          <div class="shop-card" data-item="neon" data-cost="100" data-type="frames">
+            <div class="shop-item-preview" style="border:2px solid #06b6d4; border-radius:10px; padding:6px;">🩵 Neon Cyan</div>
+            <h4>Neon Cyan Frame</h4>
+            <p>Glowing futuristic cyan border around your study video tile.</p>
+            <div class="shop-card-footer">
+              <span class="shop-cost">🪙 100 Coins</span>
+              <button type="button" class="shop-action-btn buy-btn" data-id="neon" data-type="frames" data-cost="100">Buy</button>
+            </div>
+          </div>
+          <div class="shop-card" data-item="gold" data-cost="100" data-type="frames">
+            <div class="shop-item-preview" style="border:2px solid #f59e0b; border-radius:10px; padding:6px;">💛 Gold Aura</div>
+            <h4>Scholar Gold Aura</h4>
+            <p>Radiant gold border showing your focus master status.</p>
+            <div class="shop-card-footer">
+              <span class="shop-cost">🪙 100 Coins</span>
+              <button type="button" class="shop-action-btn buy-btn" data-id="gold" data-type="frames" data-cost="100">Buy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="shop-tab-content hidden" id="shop-tab-themes">
+        <div class="shop-grid">
+          <div class="shop-card" data-item="cyberpunk" data-cost="300" data-type="themes">
+            <div class="shop-item-preview">🌃 Cyberpunk</div>
+            <h4>Midnight Neon</h4>
+            <p>Deep pitch-black background with vibrant high-contrast accents.</p>
+            <div class="shop-card-footer">
+              <span class="shop-cost">🪙 300 Coins</span>
+              <button type="button" class="shop-action-btn buy-btn" data-id="cyberpunk" data-type="themes" data-cost="300">Buy</button>
+            </div>
+          </div>
+          <div class="shop-card" data-item="lofi" data-cost="300" data-type="themes">
+            <div class="shop-item-preview">🌸 Tokyo Lofi</div>
+            <h4>Pastel Sakura</h4>
+            <p>Warm cozy pastel aesthetics for calming evening study sessions.</p>
+            <div class="shop-card-footer">
+              <span class="shop-cost">🪙 300 Coins</span>
+              <button type="button" class="shop-action-btn buy-btn" data-id="lofi" data-type="themes" data-cost="300">Buy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       6. PEER DOUBT BOARD & BYOK GEMINI AI TUTOR DRAWER
+       ========================================================= -->
+  <aside id="doubt-board-drawer" class="side-drawer hidden">
+    <div class="drawer-header">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:1.3rem;">💡</span>
+        <div>
+          <h3>Study Doubt Board</h3>
+          <small style="color:var(--text-muted);">Ask peers for help (+50 coin bounty) or query your Gemini AI Tutor.</small>
+        </div>
+      </div>
+      <button id="btn-close-doubts" class="drawer-close-btn">&times;</button>
+    </div>
+
+    <div class="board-tab-switcher">
+      <button type="button" class="doubt-tab-btn active" data-tab="peer">👥 Community Doubts</button>
+      <button type="button" class="doubt-tab-btn" data-tab="ai">🤖 Ask Gemini AI Tutor</button>
+    </div>
+
+    <!-- Community Doubts Tab -->
+    <div class="doubt-tab-view active" id="doubt-tab-peer">
+      <!-- Create Doubt Trigger / Form -->
+      <div class="doubt-post-box">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <strong style="font-size:0.9rem;">Ask the Study Hall</strong>
+          <span class="chip-badge" style="font-size:0.75rem;">🪙 Cost: 20 Coins</span>
+        </div>
+        <div class="form-group" style="margin-bottom:8px;">
+          <input type="text" id="doubt-subject-input" class="form-input" placeholder="Subject / Topic (e.g. Calculus Derivatives, Physics Optics)" maxlength="50">
+        </div>
+        <div class="form-group" style="margin-bottom:8px;">
+          <textarea id="doubt-question-input" class="form-input" style="height:70px; resize:vertical;" placeholder="Describe your doubt or problem in detail..."></textarea>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <label style="cursor:pointer; font-size:0.8rem; color:var(--apple-blue); display:inline-flex; align-items:center; gap:4px;">
+            📎 Attach Image
+            <input type="file" id="doubt-image-file" accept="image/*" style="display:none;">
+          </label>
+          <span id="doubt-image-filename" style="font-size:0.75rem; color:var(--text-muted); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+          <button type="button" id="btn-submit-doubt" class="btn-primary-action" style="padding:6px 14px; font-size:0.82rem;">Post Doubt (20 🪙)</button>
+        </div>
+        <div id="doubt-image-preview-box" class="hidden" style="margin-top:8px;">
+          <img id="doubt-image-preview" src="" style="max-height:100px; border-radius:6px; border:1px solid rgba(255,255,255,0.15);" />
+        </div>
+      </div>
+
+      <!-- Doubts List -->
+      <div class="doubts-container">
+        <div class="doubts-header-row">
+          <span style="font-size:0.85rem; font-weight:700;">Recent Questions</span>
+          <div class="doubt-filter-buttons">
+            <button type="button" class="doubt-filter-btn active" data-filter="all">All</button>
+            <button type="button" class="doubt-filter-btn" data-filter="open">Open</button>
+            <button type="button" class="doubt-filter-btn" data-filter="resolved">Resolved</button>
+          </div>
+        </div>
+        <div id="doubts-list" class="doubts-list">
+          <div class="empty-state">Loading community doubts...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ask Gemini AI Tutor Tab (BYOK) -->
+    <div class="doubt-tab-view hidden" id="doubt-tab-ai">
+      <div class="ai-key-config-box">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <strong>Gemini API Key (BYOK)</strong>
+            <p style="font-size:0.75rem; color:var(--text-muted); margin:2px 0 0 0;">Stored strictly in your local browser storage. Direct to Gemini endpoint.</p>
+          </div>
+          <span id="gemini-key-status" class="chip-badge" style="font-size:0.72rem;">Not Set</span>
+        </div>
+        <div style="display:flex; gap:6px; margin-top:8px;">
+          <input type="password" id="gemini-api-key-input" class="form-input" style="flex:1; font-size:0.8rem;" placeholder="Paste AI Studio Gemini Key (AIzaSy...)">
+          <button type="button" id="btn-save-gemini-key" class="btn-timer btn-play" style="padding:6px 12px; font-size:0.8rem;">Save</button>
+        </div>
+      </div>
+
+      <div class="ai-prompt-box">
+        <div class="form-group" style="margin-bottom:8px;">
+          <label style="font-size:0.78rem; font-weight:600;">Question or Problem</label>
+          <textarea id="ai-tutor-question" class="form-input" style="height:90px; resize:vertical;" placeholder="Paste your homework question, math problem, or code snippet..."></textarea>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <label style="cursor:pointer; font-size:0.8rem; color:var(--apple-blue); display:inline-flex; align-items:center; gap:4px;">
+            📷 Attach Problem Photo
+            <input type="file" id="ai-tutor-image-file" accept="image/*" style="display:none;">
+          </label>
+          <span id="ai-tutor-image-filename" style="font-size:0.75rem; color:var(--text-muted); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+          <button type="button" id="btn-ask-gemini" class="btn-primary-action" style="padding:8px 16px; font-size:0.85rem;">⚡ Ask Gemini 2.5 Flash</button>
+        </div>
+        <div id="ai-tutor-image-preview-box" class="hidden" style="margin-top:8px;">
+          <img id="ai-tutor-image-preview" src="" style="max-height:100px; border-radius:6px; border:1px solid rgba(255,255,255,0.15);" />
+        </div>
+      </div>
+
+      <!-- AI Tutor Explanation Display -->
+      <div id="ai-tutor-response-box" class="ai-response-box hidden">
+        <div class="ai-response-header">
+          <span style="font-size:0.85rem; font-weight:700;">🤖 Gemini 2.5 Flash Tutor</span>
+          <button type="button" id="btn-copy-ai-response" class="mod-btn" style="padding:2px 8px; font-size:0.72rem;">📋 Copy</button>
+        </div>
+        <div id="ai-tutor-output" class="ai-response-content"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Doubt Detail / Answers Modal -->
+  <div id="doubt-detail-modal" class="modal hidden">
+    <div class="modal-backdrop" id="doubt-detail-backdrop"></div>
+    <div class="modal-card" style="max-width:620px;">
+      <div class="modal-header">
+        <div>
+          <h3 id="doubt-detail-subject">Doubt Details</h3>
+          <span id="doubt-detail-author" style="font-size:0.78rem; color:var(--text-muted);"></span>
+        </div>
+        <button id="btn-close-doubt-detail" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="doubt-detail-body">
+        <div id="doubt-detail-question" style="font-size:0.95rem; line-height:1.5; white-space:pre-wrap; margin-bottom:12px;"></div>
+        <div id="doubt-detail-image-box" class="hidden" style="margin-bottom:12px;">
+          <img id="doubt-detail-image" src="" style="max-width:100%; max-height:260px; border-radius:8px; border:1px solid rgba(255,255,255,0.1);" />
+        </div>
+
+        <hr style="border:none; border-top:1px solid rgba(255,255,255,0.1); margin:14px 0;" />
+
+        <h4 style="font-size:0.88rem; margin-bottom:8px;">Peer Answers & Solutions</h4>
+        <div id="doubt-answers-list" class="doubt-answers-list">
+          <div class="empty-state">No answers yet. Be the first to solve this!</div>
+        </div>
+
+        <div class="answer-compose-box" style="margin-top:14px;">
+          <textarea id="doubt-answer-input" class="form-input" style="height:60px; resize:vertical;" placeholder="Write your solution or explanation here..."></textarea>
+          <div style="display:flex; justify-content:flex-end; margin-top:6px;">
+            <button type="button" id="btn-submit-answer" class="btn-primary-action" style="padding:6px 14px; font-size:0.82rem;">Submit Solution</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Floating Toast Notification -->
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=3.1"></script>
-  <script src="js/noise-generator.js?v=3.1"></script>
-  <script src="js/firebase-config.js?v=3.1"></script>
-  <script src="js/leaderboard.js?v=3.1"></script>
-  <script src="js/timer.js?v=3.1"></script>
-  <script src="js/webrtc-room.js?v=3.1"></script>
-  <script src="js/trigger-engine.js?v=3.1"></script>
-  <script src="js/app.js?v=3.1"></script>
+  <script src="js/soundboard-admin.js?v=3.2"></script>
+  <script src="js/noise-generator.js?v=3.2"></script>
+  <script src="js/firebase-config.js?v=3.2"></script>
+  <script src="js/leaderboard.js?v=3.2"></script>
+  <script src="js/timer.js?v=3.2"></script>
+  <script src="js/webrtc-room.js?v=3.2"></script>
+  <script src="js/trigger-engine.js?v=3.2"></script>
+  <script src="js/app.js?v=3.2"></script>
 </body>
 </html>
