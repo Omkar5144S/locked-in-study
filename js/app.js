@@ -756,6 +756,41 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // 13. Fullscreen Immersive Study Mode
+  const fullscreenBtn = document.getElementById('btn-toggle-fullscreen');
+  if (fullscreenBtn) {
+    fullscreenBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+        fullscreenBtn.innerHTML = '<span>✕ Exit</span>';
+      } else {
+        document.exitFullscreen().catch(() => {});
+        fullscreenBtn.innerHTML = '<span>⛶ Immersive</span>';
+      }
+    });
+  }
+
+  // 14. Study Streak Tracker
+  const streakBadge = document.getElementById('user-streak-badge');
+  if (streakBadge) {
+    const lastStudyDate = localStorage.getItem('lockedin_last_study_date');
+    const today = new Date().toISOString().slice(0, 10);
+    let streak = parseInt(localStorage.getItem('lockedin_study_streak') || '1', 10);
+
+    if (lastStudyDate) {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      if (lastStudyDate === yesterday) {
+        streak++;
+        localStorage.setItem('lockedin_study_streak', streak.toString());
+      } else if (lastStudyDate !== today) {
+        streak = 1;
+        localStorage.setItem('lockedin_study_streak', '1');
+      }
+    }
+    localStorage.setItem('lockedin_last_study_date', today);
+    streakBadge.textContent = `🔥 ${streak} ${streak === 1 ? 'Day' : 'Days'}`;
+  }
+
   // Initial HUD render
   if (window.Leaderboard) {
     window.Leaderboard.renderHUD();
