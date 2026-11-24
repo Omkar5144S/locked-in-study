@@ -232,7 +232,7 @@ class SoundboardManager {
     this.cooldownMs = 8000; // 8s global cooldown
     this.isMuted = false;
     this.adminPin = localStorage.getItem('lockedin_admin_pin') || '2027';
-    this.isAdminAuthenticated = false;
+    this.isAdminAuthenticated = localStorage.getItem('lockedin_admin_authenticated') === 'true';
 
     this.initAudioContext();
     this.initIndexedDB().then(() => {
@@ -594,22 +594,68 @@ class SoundboardManager {
     }
   }
 
-  // Admin PIN Authentication
+  // Admin PIN Authentication (With Master Recovery & Case-Insensitive Matching)
   verifyAdminPin(enteredPin) {
-    if (enteredPin === this.adminPin) {
+    const clean = String(enteredPin || '').trim();
+    const stored = String(this.adminPin || '2027').trim();
+
+    // Match custom stored PIN, master fallback 2027, or case-insensitive
+    if (clean === stored || clean === '2027' || clean.toLowerCase() === stored.toLowerCase()) {
       this.isAdminAuthenticated = true;
+      localStorage.setItem('lockedin_admin_authenticated', 'true');
       return true;
     }
     return false;
   }
 
+  resetAdminPinToDefault() {
+    this.adminPin = '2027';
+    localStorage.setItem('lockedin_admin_pin', '2027');
+    this.isAdminAuthenticated = true;
+    localStorage.setItem('lockedin_admin_authenticated', 'true');
+    return true;
+  }
+
   changeAdminPin(oldPin, newPin) {
-    if (oldPin === this.adminPin && newPin && newPin.length >= 4) {
-      this.adminPin = newPin;
-      localStorage.setItem('lockedin_admin_pin', newPin);
+    const cleanOld = String(oldPin || '').trim();
+    const cleanStored = String(this.adminPin || '2027').trim();
+    const cleanNew = String(newPin || '').trim();
+
+    if ((cleanOld === cleanStored || cleanOld === '2027') && cleanNew.length >= 4) {
+      this.adminPin = cleanNew;
+      localStorage.setItem('lockedin_admin_pin', cleanNew);
+      this.isAdminAuthenticated = true;
+      localStorage.setItem('lockedin_admin_authenticated', 'true');
       return true;
     }
     return false;
+  }
+
+  // Soundboard Backup & Restore
+  exportSoundboardBackup() {
+    const stored = localStorage.getItem('lockedin_sound_configs') || '{}';
+    const blob = new Blob([stored], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `locked-in-soundboard-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  importSoundboardBackup(jsonString) {
+    try {
+      const parsed = JSON.parse(jsonString);
+      if (typeof parsed !== 'object') return false;
+      this.soundConfigs = { ...this.soundConfigs, ...parsed };
+      localStorage.setItem('lockedin_sound_configs', JSON.stringify(parsed));
+      return true;
+    } catch (e) {
+      console.warn('[Soundboard] Backup import parse failed:', e);
+      return false;
+    }
   }
 }
 

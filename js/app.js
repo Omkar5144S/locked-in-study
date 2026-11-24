@@ -463,7 +463,38 @@ document.addEventListener('DOMContentLoaded', () => {
         adminContentView.classList.remove('hidden');
         renderAdminSoundboardList();
       } else {
-        alert('Incorrect Admin PIN. Default PIN is 2027.');
+        alert('Incorrect Admin PIN. Default or recovery PIN is 2027.');
+      }
+    });
+  }
+
+  if (adminPinInput) {
+    adminPinInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (adminUnlockBtn) adminUnlockBtn.click();
+      }
+    });
+  }
+
+  const togglePinVisibilityBtn = document.getElementById('btn-toggle-pin-visibility');
+  if (togglePinVisibilityBtn && adminPinInput) {
+    togglePinVisibilityBtn.addEventListener('click', () => {
+      const isPassword = adminPinInput.type === 'password';
+      adminPinInput.type = isPassword ? 'text' : 'password';
+      togglePinVisibilityBtn.textContent = isPassword ? '🙈' : '👁️';
+    });
+  }
+
+  const forgotPinBtn = document.getElementById('btn-forgot-pin');
+  if (forgotPinBtn) {
+    forgotPinBtn.addEventListener('click', () => {
+      if (confirm('Reset Admin PIN to default (2027)? Your saved sound settings and files will NOT be touched.')) {
+        window.Soundboard.resetAdminPinToDefault();
+        alert('Admin PIN reset to 2027! Unlocking studio...');
+        adminAuthView.classList.add('hidden');
+        adminContentView.classList.remove('hidden');
+        renderAdminSoundboardList();
       }
     });
   }
@@ -623,13 +654,40 @@ document.addEventListener('DOMContentLoaded', () => {
   const changePinBtn = document.getElementById('btn-change-pin');
   if (changePinBtn) {
     changePinBtn.addEventListener('click', () => {
-      const oldPin = prompt('Enter Current Admin PIN:');
+      const oldPin = prompt('Enter Current Admin PIN (or 2027):');
       const newPin = prompt('Enter New Admin PIN (min 4 characters):');
       if (window.Soundboard.changeAdminPin(oldPin, newPin)) {
         alert('Admin PIN updated successfully.');
       } else {
         alert('Failed to update PIN. Verify your current PIN and new PIN format.');
       }
+    });
+  }
+
+  // Admin Studio: Export & Import Soundboard Backups
+  const exportSoundboardBtn = document.getElementById('btn-export-soundboard');
+  if (exportSoundboardBtn) {
+    exportSoundboardBtn.addEventListener('click', () => {
+      window.Soundboard.exportSoundboardBackup();
+    });
+  }
+
+  const importSoundboardInput = document.getElementById('input-import-soundboard');
+  if (importSoundboardInput) {
+    importSoundboardInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (re) => {
+        const ok = window.Soundboard.importSoundboardBackup(re.target.result);
+        if (ok) {
+          alert('Soundboard backup restored successfully! All custom triggers are loaded.');
+          renderAdminSoundboardList();
+        } else {
+          alert('Failed to parse soundboard backup file. Please ensure it is a valid JSON export.');
+        }
+      };
+      reader.readAsText(file);
     });
   }
 

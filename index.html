@@ -343,10 +343,18 @@
         <!-- Admin PIN Authentication -->
         <div id="admin-auth-view" class="admin-auth-box">
           <h3>Enter Admin PIN</h3>
-          <p>Protected studio for sound customization and cloud configuration. Default PIN is <code>2027</code>.</p>
-          <div style="display:flex; gap:8px; justify-content:center;">
-            <input type="password" id="admin-pin-input" class="form-input" style="width:160px; text-align:center;" placeholder="PIN">
+          <p>Protected studio for sound customization and cloud configuration. Your custom sounds are safely saved.</p>
+          <div style="display:flex; gap:8px; justify-content:center; align-items:center; margin-bottom:10px;">
+            <div style="position:relative; width:180px;">
+              <input type="password" id="admin-pin-input" class="form-input" style="width:100%; text-align:center; padding-right:34px;" placeholder="PIN / Password">
+              <button type="button" id="btn-toggle-pin-visibility" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:1rem;" title="Show/Hide PIN">👁️</button>
+            </div>
             <button id="admin-unlock-btn" class="btn-timer btn-play">Unlock</button>
+          </div>
+          <div style="margin-top:8px;">
+            <button type="button" id="btn-forgot-pin" style="background:none; border:none; color:var(--apple-blue); font-size:0.78rem; text-decoration:underline; cursor:pointer;">
+              Forgot PIN? Emergency Reset to 2027
+            </button>
           </div>
         </div>
 
@@ -362,9 +370,16 @@
               <span id="firebase-status-pill" class="pill-local">Local Instant Mode</span>
             </div>
             <textarea id="firebase-config-json" class="firebase-textarea" placeholder='{ "apiKey": "...", "authDomain": "...", "projectId": "..." }'></textarea>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
               <button id="btn-save-firebase-config" class="btn-timer btn-play">Save & Connect Cloud</button>
-              <button id="btn-change-pin" class="mod-btn">Change Admin PIN</button>
+              <div style="display:flex; gap:6px;">
+                <button type="button" id="btn-export-soundboard" class="mod-btn" title="Download JSON backup of your sound slots">💾 Export Backup</button>
+                <label class="mod-btn" style="cursor:pointer; display:inline-flex; align-items:center;" title="Restore soundboard from backup">
+                  📥 Import Backup
+                  <input type="file" id="input-import-soundboard" accept=".json" style="display:none;">
+                </label>
+                <button id="btn-change-pin" class="mod-btn">Change PIN</button>
+              </div>
             </div>
           </div>
 
