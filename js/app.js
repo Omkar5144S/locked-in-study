@@ -271,6 +271,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  let watermarkInterval = null;
+  function updateWatermark(name) {
+    const overlay = document.getElementById('study-watermark-overlay');
+    if (!overlay) return;
+    const dateStr = new Date().toLocaleTimeString();
+    const watermarkText = `🔒 LOCKED-IN • CONFIDENTIAL • ${name} • ${dateStr}`;
+    let html = '';
+    for (let i = 0; i < 20; i++) {
+      html += `<span class="watermark-unit">${watermarkText}</span>`;
+    }
+    overlay.innerHTML = html;
+  }
+
   // 3. Centralized Study Session Starter
   async function startStudySession(roomId, isPrivate = false, passcode = null) {
     const displayName = (displayNameInput.value || '').trim() || 'FocusScholar';
@@ -348,6 +361,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize & auto-start Study Timer so focus triggers are live immediately
     window.StudyTimer.resetTimer();
     window.StudyTimer.startTimer();
+
+    // Start dynamic anti-leak watermark
+    updateWatermark(displayName);
+    if (watermarkInterval) clearInterval(watermarkInterval);
+    watermarkInterval = setInterval(() => {
+      updateWatermark(displayName);
+    }, 15000);
   }
 
   // Leave Room Handlers (Header & Dock)
@@ -357,6 +377,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btn) {
       btn.addEventListener('click', () => {
         if (confirm('Leave current study room and return to the lobby?')) {
+          if (watermarkInterval) {
+            clearInterval(watermarkInterval);
+            watermarkInterval = null;
+          }
           window.WebRTCRoom.leaveStudyRoom();
         }
       });
@@ -478,7 +502,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 7. Raise Hand Control
+  // 7. Zoom-Style Media & Privacy Controls
+  const toggleCamBtn = document.getElementById('toggle-cam-btn');
+  if (toggleCamBtn) {
+    toggleCamBtn.addEventListener('click', () => {
+      window.WebRTCRoom.toggleCamera();
+    });
+  }
+
+  const toggleScreenBtn = document.getElementById('toggle-screen-btn');
+  if (toggleScreenBtn) {
+    toggleScreenBtn.addEventListener('click', () => {
+      window.WebRTCRoom.toggleScreenShare();
+    });
+  }
+
+  const dockNoiseBtn = document.getElementById('dock-noise-btn');
+  if (dockNoiseBtn) {
+    dockNoiseBtn.addEventListener('click', () => {
+      const modal = document.getElementById('study-noise-modal');
+      if (modal) modal.classList.remove('hidden');
+    });
+  }
+
+  // 8. Raise Hand Control
   const raiseHandBtn = document.getElementById('raise-hand-btn');
   if (raiseHandBtn) {
     raiseHandBtn.addEventListener('click', () => {

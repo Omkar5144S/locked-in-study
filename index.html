@@ -27,7 +27,7 @@
       document.documentElement.style.colorScheme = (t === 'vibrant') ? 'light' : 'dark';
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=2.9">
+  <link rel="stylesheet" href="styles.css?v=3.0">
   
   <!-- PeerJS WebRTC Mesh -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -54,7 +54,8 @@
 
     <div class="room-meta-chips">
       <span id="room-id-badge" class="chip-badge">Lobby</span>
-      <span id="room-count-badge" class="chip-badge">1/8 Online</span>
+      <span id="room-count-badge" class="chip-badge live-active-badge">🟢 1 Active</span>
+      <span class="chip-badge privacy-chip" title="Hardware kill-switches & Anti-Leak Dynamic Watermark active">🛡️ Anti-Leak Protected</span>
       <button id="btn-copy-invite" class="btn-icon-label" title="Copy shareable room link">
         <span>🔗 Invite</span>
       </button>
@@ -248,12 +249,22 @@
     </div>
 
     <!-- 8-Person Mesh Grid -->
-    <section id="study-grid" class="study-grid">
+    <section id="study-grid" class="study-grid" oncontextmenu="return false;">
+      <!-- Forensic Anti-Screenrecord Dynamic Watermark Overlay -->
+      <div id="study-watermark-overlay" class="watermark-overlay" aria-hidden="true"></div>
+
       <!-- Local User Tile -->
       <div id="local-user-tile" class="study-tile local-tile dual-feed">
         <div class="video-container">
           <!-- Main Feed (Screen share by default in dual-feed) -->
           <video id="local-screen-video" autoplay playsinline muted class="main-video"></video>
+
+          <!-- Privacy Avatar Card (shown when camera is stopped) -->
+          <div id="local-avatar-card" class="tile-avatar-card hidden">
+            <div class="avatar-circle" id="local-avatar-initials">FS</div>
+            <span class="avatar-title" id="local-avatar-name">FocusScholar</span>
+            <span class="avatar-status">🔒 Camera Off (Privacy Mode)</span>
+          </div>
 
           <!-- Picture-in-Picture Feed (Face/Desk Camera) -->
           <div id="local-pip-wrapper" class="pip-overlay" title="Click to swap Camera and Screen feeds">
@@ -282,7 +293,7 @@
       <!-- Remote peer tiles (1-7) injected dynamically here -->
     </section>
 
-    <!-- Bottom Timer & Audio Dock -->
+    <!-- Bottom Timer & Audio Dock (Zoom Style) -->
     <footer class="timer-dock">
       <div class="timer-preset-group">
         <button class="preset-btn active" data-focus="25" data-break="5">25 / 5m</button>
@@ -297,13 +308,18 @@
       </div>
 
       <div class="mic-voice-controls">
-        <button id="toggle-mic-btn" class="control-btn mic-muted">
+        <button id="toggle-mic-btn" class="control-btn mic-muted" title="Mute/Unmute Mic">
           <span>🎤 Unmute</span>
         </button>
-        <label class="ptt-toggle-label" title="Hold spacebar or mic button to speak">
-          <input type="checkbox" id="ptt-mode-toggle" checked>
-          <span>Push-to-Talk (Space)</span>
-        </label>
+        <button id="toggle-cam-btn" class="control-btn cam-active" title="Camera Privacy (Stop/Start Video)">
+          <span>📹 Stop Video</span>
+        </button>
+        <button id="toggle-screen-btn" class="control-btn" title="Screen Share (Share/Stop Sharing Screen)">
+          <span>🖥️ Share Screen</span>
+        </button>
+        <button id="dock-noise-btn" class="control-btn" title="Focus Ambient Audio (Brown, White, Pink Noise)">
+          <span>🎧 Noise</span>
+        </button>
         <button id="raise-hand-btn" class="control-btn" title="Ask a study doubt">
           <span>✋ Raise Hand</span>
         </button>
@@ -495,13 +511,13 @@
   </div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=2.9"></script>
-  <script src="js/noise-generator.js?v=2.9"></script>
-  <script src="js/firebase-config.js?v=2.9"></script>
-  <script src="js/leaderboard.js?v=2.9"></script>
-  <script src="js/timer.js?v=2.9"></script>
-  <script src="js/webrtc-room.js?v=2.9"></script>
-  <script src="js/trigger-engine.js?v=2.9"></script>
-  <script src="js/app.js?v=2.9"></script>
+  <script src="js/soundboard-admin.js?v=3.0"></script>
+  <script src="js/noise-generator.js?v=3.0"></script>
+  <script src="js/firebase-config.js?v=3.0"></script>
+  <script src="js/leaderboard.js?v=3.0"></script>
+  <script src="js/timer.js?v=3.0"></script>
+  <script src="js/webrtc-room.js?v=3.0"></script>
+  <script src="js/trigger-engine.js?v=3.0"></script>
+  <script src="js/app.js?v=3.0"></script>
 </body>
 </html>

@@ -16,65 +16,18 @@ class LeaderboardManager {
       pointsLost: parseInt(localStorage.getItem('lockedin_points_lost') || '0', 10)
     };
 
-    this.defaultSeedData = [
-      {
-        uid: 'user_alex',
-        displayName: 'DeepWorkAlex',
-        subjectGoal: 'Calculus III & Linear Alg',
-        totalPoints: 1240,
-        cleanStudyMinutes: 580,
-        shameCount: 1,
-        topTrigger: 'MIC_NOISE_SPIKE',
-        pointsLost: 20
-      },
-      {
-        uid: 'user_sophia',
-        displayName: 'SophiaGrinds',
-        subjectGoal: 'MCAT Biology Review',
-        totalPoints: 1085,
-        cleanStudyMinutes: 510,
-        shameCount: 2,
-        topTrigger: 'LOOKING_AWAY_PROLONGED',
-        pointsLost: 40
-      },
-      {
-        uid: 'user_kai',
-        displayName: 'Kai_CodeWarrior',
-        subjectGoal: 'Distributed Systems in Rust',
-        totalPoints: 920,
-        cleanStudyMinutes: 440,
-        shameCount: 0,
-        topTrigger: 'None',
-        pointsLost: 0
-      },
-      {
-        uid: 'user_slacker',
-        displayName: 'DoomScroller99',
-        subjectGoal: 'Supposedly History Essay',
-        totalPoints: -110,
-        cleanStudyMinutes: 35,
-        shameCount: 9,
-        topTrigger: 'SECOND_PHONE_DETECTED',
-        pointsLost: 240
-      },
-      {
-        uid: 'user_sleepy',
-        displayName: 'NapKing_Rohan',
-        subjectGoal: 'Macroeconomics PSET',
-        totalPoints: 60,
-        cleanStudyMinutes: 70,
-        shameCount: 6,
-        topTrigger: 'HEAD_DOWN_SLEEPING',
-        pointsLost: 140
-      }
-    ];
-
+    this.defaultSeedData = [];
     this.initStorage();
   }
 
   initStorage() {
-    if (!localStorage.getItem('lockedin_leaderboard_users')) {
-      localStorage.setItem('lockedin_leaderboard_users', JSON.stringify(this.defaultSeedData));
+    try {
+      const existing = JSON.parse(localStorage.getItem('lockedin_leaderboard_users') || '[]');
+      // Strip out any legacy fake demo users
+      const realUsers = existing.filter(u => u && !u.uid?.startsWith('user_') && u.uid !== 'mock');
+      localStorage.setItem('lockedin_leaderboard_users', JSON.stringify(realUsers));
+    } catch (e) {
+      localStorage.setItem('lockedin_leaderboard_users', '[]');
     }
   }
 
@@ -174,6 +127,32 @@ class LeaderboardManager {
     }
   }
 
+  // Register or update remote peer in the live leaderboard
+  upsertPeer(peerData) {
+    if (!peerData || !peerData.uid) return;
+    const users = this.getAllUsers();
+    const idx = users.findIndex(u => u.uid === peerData.uid);
+    const entry = {
+      uid: peerData.uid,
+      displayName: peerData.displayName || 'Peer',
+      subjectGoal: peerData.subject || 'Deep Focus',
+      totalPoints: peerData.points !== undefined ? peerData.points : 150,
+      cleanStudyMinutes: peerData.cleanStudyMinutes || 0,
+      shameCount: peerData.shameCount || 0,
+      topTrigger: peerData.topTrigger || 'None',
+      pointsLost: peerData.pointsLost || 0
+    };
+    if (idx >= 0) {
+      users[idx] = { ...users[idx], ...entry };
+    } else {
+      users.push(entry);
+    }
+    try {
+      localStorage.setItem('lockedin_leaderboard_users', JSON.stringify(users));
+    } catch (e) {}
+    this.renderBoards();
+  }
+
   // Render Top Grinders & Wall of Shame
   renderBoards() {
     const users = this.getAllUsers();
@@ -183,28 +162,32 @@ class LeaderboardManager {
     const grindersTbody = document.getElementById('grinders-list-body');
     if (grindersTbody) {
       grindersTbody.innerHTML = '';
-      grindersList.forEach((u, index) => {
-        const tr = document.createElement('tr');
-        tr.className = u.uid === this.currentUser.uid ? 'current-user-row' : '';
+      if (grindersList.length === 0) {
+        grindersTbody.innerHTML = `<tr><td colspan="4" class="empty-state">No other students active today. Study cleanly to claim #1!</td></tr>`;
+      } else {
+        grindersList.forEach((u, index) => {
+          const tr = document.createElement('tr');
+          tr.className = u.uid === this.currentUser.uid ? 'current-user-row' : '';
 
-        let rankBadge = `${index + 1}`;
-        if (index === 0) rankBadge = '🥇';
-        else if (index === 1) rankBadge = '🥈';
-        else if (index === 2) rankBadge = '🥉';
+          let rankBadge = `${index + 1}`;
+          if (index === 0) rankBadge = '🥇';
+          else if (index === 1) rankBadge = '🥈';
+          else if (index === 2) rankBadge = '🥉';
 
-        const hours = (u.cleanStudyMinutes / 60).toFixed(1);
+          const hours = (u.cleanStudyMinutes / 60).toFixed(1);
 
-        tr.innerHTML = `
-          <td class="rank-col">${rankBadge}</td>
-          <td class="user-col">
-            <span class="user-name">${this.escapeHtml(u.displayName)}</span>
-            <span class="user-sub">${this.escapeHtml(u.subjectGoal || 'Deep Focus')}</span>
-          </td>
-          <td class="hours-col">${hours} hrs</td>
-          <td class="points-col"><strong>${u.totalPoints}</strong></td>
-        `;
-        grindersTbody.appendChild(tr);
-      });
+          tr.innerHTML = `
+            <td class="rank-col">${rankBadge}</td>
+            <td class="user-col">
+              <span class="user-name">${this.escapeHtml(u.displayName)}</span>
+              <span class="user-sub">${this.escapeHtml(u.subjectGoal || 'Deep Focus')}</span>
+            </td>
+            <td class="hours-col">${hours} hrs</td>
+            <td class="points-col"><strong>${u.totalPoints}</strong></td>
+          `;
+          grindersTbody.appendChild(tr);
+        });
+      }
     }
 
     // 2. Wall of Shame (Sorted by Shame Count & Points Lost descending)

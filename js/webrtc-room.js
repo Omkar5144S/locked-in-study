@@ -17,9 +17,11 @@ class WebRTCRoomManager {
     this.localScreenStream = null;
     this.isDualFeedActive = false;
     this.isCamSwapped = false; // For PiP swap
+    this.isScreenSharing = false;
+    this.isCameraPrivacyActive = false;
 
     // Peer connections
-    this.peers = new Map(); // peerId -> { call, dataConn, meta, videoEl }
+    this.peers = new Map(); // peerId -> { call, dataConn, meta, videoEl, stream }
     this.maxRoomCapacity = 8;
 
     // Audio controls
@@ -29,6 +31,75 @@ class WebRTCRoomManager {
 
     // Room state
     this.participants = new Map(); // uid -> data
+  }
+
+  // Generate a silent WebAudio track to ensure SDP negotiations never fail
+  createSilentAudioTrack() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return null;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const dst = ctx.createMediaStreamDestination();
+      osc.connect(dst);
+      osc.start();
+      const track = dst.stream.getAudioTracks()[0];
+      if (track) track.enabled = false;
+      return track;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  ensureAudioTrack(stream) {
+    if (!stream) return stream;
+    if (stream.getAudioTracks().length === 0) {
+      const silentTrack = this.createSilentAudioTrack();
+      if (silentTrack) {
+        stream.addTrack(silentTrack);
+      }
+    }
+    return stream;
+  }
+
+  // Returns the active stream that peers should see (Screen share if sharing, else Camera)
+  getOutgoingStream() {
+    if (this.isScreenSharing && this.localScreenStream && this.localScreenStream.active) {
+      const combined = new MediaStream();
+      const screenVidTrack = this.localScreenStream.getVideoTracks()[0];
+      if (screenVidTrack) combined.addTrack(screenVidTrack);
+
+      const audioTrack = this.localCamStream && this.localCamStream.getAudioTracks()[0];
+      if (audioTrack) {
+        combined.addTrack(audioTrack);
+      } else {
+        const silent = this.createSilentAudioTrack();
+        if (silent) combined.addTrack(silent);
+      }
+      return combined;
+    }
+
+    return this.ensureAudioTrack(this.localCamStream);
+  }
+
+  // Replace outgoing video track on all connected peers in real time (Zero reload)
+  replaceOutgoingVideoTrack(newTrack) {
+    if (!newTrack) return;
+    this.peers.forEach((peerObj) => {
+      if (peerObj.call && peerObj.call.peerConnection) {
+        try {
+          const senders = peerObj.call.peerConnection.getSenders();
+          const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+          if (videoSender) {
+            videoSender.replaceTrack(newTrack).catch(err => {
+              console.warn('[WebRTC] replaceTrack error:', err);
+            });
+          }
+        } catch (e) {
+          console.warn('[WebRTC] getSenders error:', e);
+        }
+      }
+    });
   }
 
   // Initialize Local Media Streams with Multi-Tier Fallback
@@ -56,6 +127,9 @@ class WebRTCRoomManager {
       }
     }
 
+    // Ensure audio track is present
+    this.ensureAudioTrack(this.localCamStream);
+
     // Mute mic by default during study session
     this.muteMic(true);
 
@@ -68,7 +142,10 @@ class WebRTCRoomManager {
             audio: false
           });
 
+          this.isScreenSharing = true;
+
           this.localScreenStream.getVideoTracks()[0].onended = () => {
+            this.stopScreenShare();
             if (window.TriggerEngine) {
               window.TriggerEngine.triggerCandidate('SCREEN_OFF_MID_SESSION', 'Screen sharing was ended!');
             }
@@ -87,6 +164,7 @@ class WebRTCRoomManager {
     const localScreenVideo = document.getElementById('local-screen-video');
     const pipWrapper = document.getElementById('local-pip-wrapper');
     const pipSwapBtn = document.getElementById('btn-pip-swap');
+    const screenBtn = document.getElementById('toggle-screen-btn');
 
     if (this.isDualFeedActive && this.localScreenStream) {
       // Dual Feed: Screen is main feed, Camera is in PiP overlay
@@ -102,6 +180,10 @@ class WebRTCRoomManager {
       }
       if (pipWrapper) pipWrapper.style.display = 'block';
       if (pipSwapBtn) pipSwapBtn.style.display = 'inline-flex';
+      if (screenBtn) {
+        screenBtn.innerHTML = '<span>🛑 Stop Sharing</span>';
+        screenBtn.className = 'control-btn screen-active';
+      }
     } else {
       // Single Camera / Mobile Mode: Camera takes up the FULL tile!
       if (localScreenVideo && this.localCamStream) {
@@ -111,6 +193,10 @@ class WebRTCRoomManager {
       }
       if (pipWrapper) pipWrapper.style.display = 'none';
       if (pipSwapBtn) pipSwapBtn.style.display = 'none';
+      if (screenBtn) {
+        screenBtn.innerHTML = '<span>🖥️ Share Screen</span>';
+        screenBtn.className = 'control-btn';
+      }
     }
 
     this.updateTileLayout();
@@ -249,8 +335,14 @@ class WebRTCRoomManager {
         return;
       }
       
-      // Benign errors: ignore peer-unavailable for unoccupied slots
+      // Benign errors: clean up peer-unavailable for unoccupied slots
       if (err.type === 'peer-unavailable') {
+        const match = err.message && err.message.match(/peer\s+([a-zA-Z0-9_-]+)/i);
+        const failedId = match ? match[1] : null;
+        if (failedId) {
+          this.peers.delete(failedId);
+          this.removeRemoteTile(failedId);
+        }
         return;
       }
 
@@ -313,7 +405,7 @@ class WebRTCRoomManager {
     // Handle Incoming Calls (Media Streams)
     this.peer.on('call', (call) => {
       console.log(`[WebRTC] Incoming call from peer: ${call.peer}`);
-      call.answer(this.localCamStream);
+      call.answer(this.getOutgoingStream());
       this.handlePeerCall(call);
 
       // Connect reciprocal data connection if not present
@@ -354,12 +446,12 @@ class WebRTCRoomManager {
     }, 4500);
   }
 
-  // Call a peer with our local camera stream & establish data connection
+  // Call a peer with our active outgoing stream & establish data connection
   callPeer(remotePeerId, meta = {}) {
     if (!this.peer || this.peer.destroyed || this.peers.has(remotePeerId)) return;
 
     try {
-      const call = this.peer.call(remotePeerId, this.localCamStream, {
+      const call = this.peer.call(remotePeerId, this.getOutgoingStream(), {
         metadata: {
           displayName: (window.Leaderboard && window.Leaderboard.currentUser.displayName) || 'Student',
           subject: (window.Leaderboard && window.Leaderboard.currentUser.subjectGoal) || 'Focus',
@@ -386,7 +478,13 @@ class WebRTCRoomManager {
 
     call.on('stream', (remoteStream) => {
       console.log(`[WebRTC] Received remote stream from ${remotePeerId}`);
+      if (!this.peers.has(remotePeerId)) {
+        this.peers.set(remotePeerId, {});
+      }
+      this.peers.get(remotePeerId).stream = remoteStream;
+      this.peers.get(remotePeerId).call = call;
       this.renderRemoteTile(remotePeerId, remoteStream, call.metadata || initialMeta);
+      this.updateRoomParticipantCount();
     });
 
     call.on('close', () => {
@@ -397,11 +495,6 @@ class WebRTCRoomManager {
       console.warn('[WebRTC] Call error with peer:', remotePeerId, err);
       this.removeRemoteTile(remotePeerId);
     });
-
-    if (!this.peers.has(remotePeerId)) {
-      this.peers.set(remotePeerId, {});
-    }
-    this.peers.get(remotePeerId).call = call;
   }
 
   handleDataConnection(conn) {
@@ -409,6 +502,12 @@ class WebRTCRoomManager {
 
     conn.on('open', () => {
       console.log(`[WebRTC] Data channel established with ${remotePeerId}`);
+      if (!this.peers.has(remotePeerId)) {
+        this.peers.set(remotePeerId, {});
+      }
+      this.peers.get(remotePeerId).dataConn = conn;
+      this.updateRoomParticipantCount();
+
       // Send initial state handshake with passcode
       conn.send({
         type: 'HANDSHAKE',
@@ -439,10 +538,10 @@ class WebRTCRoomManager {
       this.removeRemoteTile(remotePeerId);
     });
 
-    if (!this.peers.has(remotePeerId)) {
-      this.peers.set(remotePeerId, {});
-    }
-    this.peers.get(remotePeerId).dataConn = conn;
+    conn.on('error', (err) => {
+      console.warn('[WebRTC] Data channel error with peer:', remotePeerId, err);
+      this.removeRemoteTile(remotePeerId);
+    });
   }
 
   // Broadcast data payload to all connected peers
@@ -475,7 +574,53 @@ class WebRTCRoomManager {
 
       case 'HANDSHAKE':
         this.updateRemoteTileHUD(senderPeerId, data);
+        if (window.Leaderboard && window.Leaderboard.upsertPeer) {
+          window.Leaderboard.upsertPeer({
+            uid: senderPeerId,
+            displayName: data.displayName,
+            subject: data.subject,
+            points: data.points
+          });
+        }
         break;
+
+      case 'CAMERA_PRIVACY_TOGGLED': {
+        const tile = document.getElementById(`tile-${senderPeerId}`);
+        if (tile) {
+          const avatar = tile.querySelector('.remote-avatar-card');
+          const video = tile.querySelector('video');
+          if (data.isCameraOff) {
+            if (avatar) avatar.classList.remove('hidden');
+            if (video) video.style.opacity = '0';
+          } else {
+            if (avatar) avatar.classList.add('hidden');
+            if (video) video.style.opacity = '1';
+          }
+        }
+        break;
+      }
+
+      case 'SCREEN_SHARE_STARTED': {
+        const tile = document.getElementById(`tile-${senderPeerId}`);
+        if (tile) {
+          const badge = tile.querySelector('.subject-badge');
+          if (badge) badge.textContent = '🖥️ Screen Sharing';
+          const avatar = tile.querySelector('.remote-avatar-card');
+          const video = tile.querySelector('video');
+          if (avatar) avatar.classList.add('hidden');
+          if (video) video.style.opacity = '1';
+        }
+        break;
+      }
+
+      case 'SCREEN_SHARE_STOPPED': {
+        const tile = document.getElementById(`tile-${senderPeerId}`);
+        if (tile) {
+          const badge = tile.querySelector('.subject-badge');
+          if (badge) badge.textContent = 'Deep Focus';
+        }
+        break;
+      }
 
       case 'TIMER_SYNC':
         if (!this.isHost && window.StudyTimer && window.StudyTimer.isSyncedWithHost) {
@@ -542,6 +687,11 @@ class WebRTCRoomManager {
       tile.innerHTML = `
         <div class="video-container">
           <video autoplay playsinline class="remote-video"></video>
+          <div class="tile-avatar-card remote-avatar-card hidden">
+            <div class="avatar-circle">${this.escapeHtml((displayName.trim().slice(0, 2)).toUpperCase())}</div>
+            <span class="avatar-title">${this.escapeHtml(displayName)}</span>
+            <span class="avatar-status">🔒 Camera Off (Privacy Mode)</span>
+          </div>
         </div>
         <div class="tile-hud">
           <div class="hud-top">
@@ -576,10 +726,29 @@ class WebRTCRoomManager {
     }
 
     const videoEl = tile.querySelector('video');
+    const avatarCard = tile.querySelector('.remote-avatar-card');
+
     if (videoEl && videoEl.srcObject !== stream) {
       videoEl.srcObject = stream;
       videoEl.playsInline = true;
       videoEl.autoplay = true;
+
+      const videoTrack = stream && stream.getVideoTracks()[0];
+      if (videoTrack) {
+        if (!videoTrack.enabled) {
+          if (avatarCard) avatarCard.classList.remove('hidden');
+        } else {
+          if (avatarCard) avatarCard.classList.add('hidden');
+        }
+
+        videoTrack.addEventListener('mute', () => {
+          if (avatarCard) avatarCard.classList.remove('hidden');
+        });
+        videoTrack.addEventListener('unmute', () => {
+          if (avatarCard) avatarCard.classList.add('hidden');
+        });
+      }
+
       const playPromise = videoEl.play();
       if (playPromise !== undefined) {
         playPromise.catch(err => {
@@ -756,9 +925,173 @@ class WebRTCRoomManager {
     }
     const micBtn = document.getElementById('toggle-mic-btn');
     if (micBtn) {
-      micBtn.innerHTML = shouldMute ? '<span>🎤 Unmute</span>' : '<span>🎙️ Muted (Live)</span>';
+      micBtn.innerHTML = shouldMute ? '<span>🎤 Unmute</span>' : '<span>🎙️ Mute</span>';
       micBtn.className = shouldMute ? 'control-btn mic-muted' : 'control-btn mic-active';
     }
+  }
+
+  // Camera Privacy Toggle (Zoom Style)
+  toggleCamera() {
+    this.isCameraPrivacyActive = !this.isCameraPrivacyActive;
+
+    if (this.localCamStream) {
+      const videoTrack = this.localCamStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !this.isCameraPrivacyActive;
+      }
+    }
+
+    const avatarCard = document.getElementById('local-avatar-card');
+    const localScreenVideo = document.getElementById('local-screen-video');
+    const localCamVideo = document.getElementById('local-cam-video');
+    const camBtn = document.getElementById('toggle-cam-btn');
+
+    if (this.isCameraPrivacyActive) {
+      if (avatarCard && !this.isScreenSharing) avatarCard.classList.remove('hidden');
+      if (localScreenVideo && !this.isScreenSharing) localScreenVideo.style.opacity = '0';
+      if (localCamVideo) localCamVideo.style.opacity = '0';
+      if (camBtn) {
+        camBtn.innerHTML = '<span>📷 Start Video</span>';
+        camBtn.className = 'control-btn cam-muted';
+      }
+    } else {
+      if (avatarCard) avatarCard.classList.add('hidden');
+      if (localScreenVideo) localScreenVideo.style.opacity = '1';
+      if (localCamVideo) localCamVideo.style.opacity = '1';
+      if (camBtn) {
+        camBtn.innerHTML = '<span>📹 Stop Video</span>';
+        camBtn.className = 'control-btn cam-active';
+      }
+    }
+
+    this.broadcastData({
+      type: 'CAMERA_PRIVACY_TOGGLED',
+      userId: (window.Leaderboard && window.Leaderboard.currentUser.uid) || this.peerId,
+      isCameraOff: this.isCameraPrivacyActive
+    });
+
+    if (window.TriggerEngine && window.TriggerEngine.showShameToast) {
+      window.TriggerEngine.showShameToast(this.isCameraPrivacyActive ? '🔒 Camera paused (Privacy Mode)' : '📹 Camera resumed');
+    }
+  }
+
+  // Screen Share Toggle (Zoom Style)
+  async toggleScreenShare() {
+    if (this.isScreenSharing) {
+      this.stopScreenShare();
+    } else {
+      await this.startScreenShare();
+    }
+  }
+
+  async startScreenShare() {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        alert('Screen sharing is not supported on this device/browser.');
+        return;
+      }
+
+      this.localScreenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: 'always' },
+        audio: false
+      });
+
+      this.isScreenSharing = true;
+      const screenVidTrack = this.localScreenStream.getVideoTracks()[0];
+
+      // Replace outgoing video track on all active peer connections
+      this.replaceOutgoingVideoTrack(screenVidTrack);
+
+      // Update Local Tile
+      const localScreenVideo = document.getElementById('local-screen-video');
+      const localCamVideo = document.getElementById('local-cam-video');
+      const pipWrapper = document.getElementById('local-pip-wrapper');
+      const pipSwapBtn = document.getElementById('btn-pip-swap');
+      const avatarCard = document.getElementById('local-avatar-card');
+
+      if (avatarCard) avatarCard.classList.add('hidden');
+      if (localScreenVideo) {
+        localScreenVideo.srcObject = this.localScreenStream;
+        localScreenVideo.style.opacity = '1';
+        localScreenVideo.play().catch(e => console.log(e));
+      }
+      if (localCamVideo && this.localCamStream) {
+        localCamVideo.srcObject = this.localCamStream;
+        localCamVideo.play().catch(e => console.log(e));
+      }
+      if (pipWrapper) pipWrapper.style.display = 'block';
+      if (pipSwapBtn) pipSwapBtn.style.display = 'inline-flex';
+
+      const screenBtn = document.getElementById('toggle-screen-btn');
+      if (screenBtn) {
+        screenBtn.innerHTML = '<span>🛑 Stop Sharing</span>';
+        screenBtn.className = 'control-btn screen-active';
+      }
+
+      screenVidTrack.onended = () => {
+        this.stopScreenShare();
+      };
+
+      this.broadcastData({
+        type: 'SCREEN_SHARE_STARTED',
+        userId: (window.Leaderboard && window.Leaderboard.currentUser.uid) || this.peerId
+      });
+
+      if (window.TriggerEngine && window.TriggerEngine.showShameToast) {
+        window.TriggerEngine.showShameToast('🖥️ Screen sharing is now live to all peers!');
+      }
+    } catch (err) {
+      console.warn('[WebRTC] getDisplayMedia error/cancelled:', err);
+    }
+  }
+
+  stopScreenShare() {
+    if (!this.isScreenSharing) return;
+    this.isScreenSharing = false;
+
+    if (this.localScreenStream) {
+      try {
+        this.localScreenStream.getTracks().forEach(t => t.stop());
+      } catch (e) {}
+      this.localScreenStream = null;
+    }
+
+    // Revert outgoing video track back to camera
+    const camTrack = this.localCamStream && this.localCamStream.getVideoTracks()[0];
+    if (camTrack) {
+      this.replaceOutgoingVideoTrack(camTrack);
+    }
+
+    const localScreenVideo = document.getElementById('local-screen-video');
+    const pipWrapper = document.getElementById('local-pip-wrapper');
+    const pipSwapBtn = document.getElementById('btn-pip-swap');
+    const avatarCard = document.getElementById('local-avatar-card');
+
+    if (this.isCameraPrivacyActive) {
+      if (avatarCard) avatarCard.classList.remove('hidden');
+      if (localScreenVideo) localScreenVideo.style.opacity = '0';
+    } else {
+      if (avatarCard) avatarCard.classList.add('hidden');
+      if (localScreenVideo && this.localCamStream) {
+        localScreenVideo.srcObject = this.localCamStream;
+        localScreenVideo.style.opacity = '1';
+        localScreenVideo.play().catch(e => console.log(e));
+      }
+    }
+
+    if (pipWrapper) pipWrapper.style.display = 'none';
+    if (pipSwapBtn) pipSwapBtn.style.display = 'none';
+
+    const screenBtn = document.getElementById('toggle-screen-btn');
+    if (screenBtn) {
+      screenBtn.innerHTML = '<span>🖥️ Share Screen</span>';
+      screenBtn.className = 'control-btn';
+    }
+
+    this.broadcastData({
+      type: 'SCREEN_SHARE_STOPPED',
+      userId: (window.Leaderboard && window.Leaderboard.currentUser.uid) || this.peerId
+    });
   }
 
   toggleRaiseHand() {
@@ -830,10 +1163,26 @@ class WebRTCRoomManager {
   }
 
   updateRoomParticipantCount() {
+    let activePeers = 0;
+    this.peers.forEach((p, id) => {
+      const hasStream = p.stream && p.stream.active;
+      const hasConn = p.dataConn && p.dataConn.open;
+      const hasTile = !!document.getElementById(`tile-${id}`);
+      if (hasStream || hasConn || hasTile) {
+        activePeers++;
+      }
+    });
+
+    const total = 1 + activePeers;
     const countBadge = document.getElementById('room-count-badge');
     if (countBadge) {
-      const total = 1 + this.peers.size;
-      countBadge.textContent = `${total}/${this.maxRoomCapacity} Online`;
+      countBadge.innerHTML = `<span style="color:#10b981; font-weight:800;">🟢 ${total}</span> Active ${total === 1 ? 'Scholar' : 'Scholars'}`;
+      countBadge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+    }
+
+    const headerActivePill = document.getElementById('header-live-active-pill');
+    if (headerActivePill) {
+      headerActivePill.textContent = `🟢 ${total} Active`;
     }
   }
 
