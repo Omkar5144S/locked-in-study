@@ -29,7 +29,7 @@
   </script>
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=3.5">
+  <link rel="stylesheet" href="styles.css?v=3.6">
 
   <!-- Firebase Web SDK v10 (Compat CDN for zero-build static hosting) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -91,13 +91,13 @@
       <button id="btn-toggle-theme" class="btn-icon-label" title="Switch Theme (Vibrant vs Dark)">
         <span id="theme-icon">☀️</span> <span id="theme-label">Vibrant</span>
       </button>
-      <button id="btn-open-noise" class="btn-icon-label" title="Focus Audio, Brown Noise & YouTube Status">
-        <span>🎧 Noise / Music</span>
+      <button id="btn-open-noise" class="btn-icon-label" title="Audio: 12 Soundscapes &amp; Study Music">
+        <span>🎧 Audio</span>
       </button>
       <span id="user-points-badge" class="user-points-badge">150 pts</span>
-      <span id="user-gamification-pill" class="chip-badge gamification-pill" title="Level, Streak & Coins">⭐ Lvl 1 | 🔥 1d | 🪙 50</span>
-      <button id="btn-open-shop" class="btn-icon-label" title="Coin Shop: Pets, Frames & Themes">
-        <span>🛍️ Shop</span>
+      <span id="user-gamification-pill" class="chip-badge gamification-pill" title="Level, Streak &amp; Coins">⭐ Lvl 1 | 🔥 1d | 🪙 50</span>
+      <button id="btn-open-shop" class="btn-icon-label" title="Store: Themes &amp; Peaceful Desk Pets">
+        <span>🛍️ Store</span>
       </button>
       <button id="btn-open-doubts" class="btn-icon-label" title="Peer Doubt Board & AI Tutor">
         <span>💡 Doubts</span>
@@ -121,11 +121,11 @@
       <span id="mobile-menu-gamification" class="chip-badge gamification-pill">⭐ Lvl 1 | 🔥 1d | 🪙 50</span>
     </div>
     <div class="mobile-menu-grid">
-      <button type="button" class="btn-icon-label mobile-menu-item" data-target="btn-open-shop">🛍️ Shop</button>
+      <button type="button" class="btn-icon-label mobile-menu-item" data-target="btn-open-shop">🛍️ Store</button>
       <button type="button" class="btn-icon-label mobile-menu-item" data-target="btn-open-doubts">💡 Doubts</button>
       <button type="button" class="btn-icon-label mobile-menu-item" data-target="btn-open-leaderboard">🏆 Boards</button>
       <button type="button" class="btn-icon-label mobile-menu-item" data-target="btn-toggle-theme">🎨 Theme</button>
-      <button type="button" class="btn-icon-label mobile-menu-item" data-target="btn-open-noise">🎧 Noise</button>
+      <button type="button" class="btn-icon-label mobile-menu-item" data-target="btn-open-noise">🎧 Audio</button>
       <button type="button" class="btn-icon-label mobile-menu-item" data-target="btn-open-settings">⚙️ Settings</button>
     </div>
   </div>
@@ -305,11 +305,11 @@
           </div>
           <div class="hud-bottom">
             <div id="local-timer-display" class="timer-display">25:00</div>
-            <div id="study-pet-hud" class="study-pet-hud studying" title="Your Study Pet">
-              <span class="pet-icon">🐱</span> <span class="pet-name">Pixel Cat</span>
-            </div>
             <span class="status-pill status-locked">LOCKED IN</span>
             <span id="local-hand-indicator" class="hand-indicator hidden">✋ Hand Raised</span>
+          </div>
+          <div id="study-pet-hud" class="study-pet-hud studying" title="Your Peaceful Desk Pet">
+            <span class="pet-icon">🐱</span> <span class="pet-name">Pixel Cat</span>
           </div>
         </div>
       </div>
@@ -341,11 +341,11 @@
         <button id="toggle-screen-btn" class="control-btn" title="Screen Share (Share/Stop Sharing Screen)">
           <span>🖥️ Share Screen</span>
         </button>
-        <button id="dock-noise-btn" class="control-btn" title="Focus Ambient Audio (Brown, White, Pink Noise)">
-          <span>🎧 Noise</span>
+        <button id="dock-noise-btn" class="control-btn" title="Audio: 12 Soundscapes &amp; Study Music">
+          <span>🎧 Audio</span>
         </button>
-        <button id="dock-todo-btn" class="control-btn" title="Toggle Session To-Do List">
-          <span>📝 To-Do</span>
+        <button id="dock-room-btn" class="control-btn" title="Open Room Chat &amp; To-Do">
+          <span>💬 Room<span id="room-unread-dot" class="room-unread-dot hidden"></span></span>
         </button>
         <button id="raise-hand-btn" class="control-btn" title="Ask a study doubt">
           <span>✋ Raise Hand</span>
@@ -359,24 +359,46 @@
       </div>
     </footer>
 
-    <!-- Session To-Do List Drawer/Popup -->
-    <div id="session-todo-widget" class="session-todo-widget hidden">
-      <div class="todo-header" id="todo-toggle-btn">
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span>📝</span>
-          <strong>Session To-Do</strong>
-          <span id="todo-progress-count" class="chip-badge" style="font-size:0.75rem; padding:2px 8px;">0/0</span>
-        </div>
-        <button type="button" class="todo-chevron-btn" id="todo-chevron-icon" title="Close To-Do">&times;</button>
+    <!-- Tabbed Room Drawer (Chat & To-Do) -->
+    <aside id="room-drawer" class="side-drawer hidden">
+      <div class="drawer-header">
+        <h3>💬 Study Room</h3>
+        <button id="btn-close-room-drawer" class="drawer-close-btn">&times;</button>
       </div>
-      <div class="todo-body" id="todo-body">
+
+      <div class="board-tab-switcher">
+        <button type="button" class="room-drawer-tab-btn active" data-roomtab="chat">💬 Chat</button>
+        <button type="button" class="room-drawer-tab-btn" data-roomtab="todo">✅ To-Do <span id="todo-progress-count" class="chip-badge" style="font-size:0.7rem; padding:1px 6px; margin-left:4px;">0/0</span></button>
+      </div>
+
+      <!-- Tab 1: Real-Time Room Chat -->
+      <div id="room-tab-chat" class="drawer-body" style="display:flex; flex-direction:column; height:calc(100% - 110px);">
+        <div id="room-chat-messages" class="room-chat-messages">
+          <div class="empty-state">No messages yet. Say hi or share a quick status!</div>
+        </div>
+        <div style="margin-top:auto; padding-top:8px; border-top:1px solid rgba(255,255,255,0.08);">
+          <div class="chat-quick-chips">
+            <button type="button" class="chat-chip-btn" data-msg="🔥 Locked In">🔥 Locked In</button>
+            <button type="button" class="chat-chip-btn" data-msg="☕ Break?">☕ Break?</button>
+            <button type="button" class="chat-chip-btn" data-msg="❓ Doubt">❓ Doubt</button>
+            <button type="button" class="chat-chip-btn" data-msg="👏 GG">👏 GG</button>
+          </div>
+          <div class="todo-input-row" style="margin-bottom:0;">
+            <input type="text" id="room-chat-input" class="form-input" placeholder="Message room (max 200 chars)..." maxlength="200" style="padding:8px 10px; font-size:0.84rem;" />
+            <button type="button" id="btn-send-room-chat" class="btn-timer btn-play" style="padding:6px 14px; font-size:0.82rem;">Send</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Session To-Do -->
+      <div id="room-tab-todo" class="drawer-body hidden">
         <div class="todo-input-row">
-          <input type="text" id="todo-input" placeholder="Add focus task... (Press Enter)" maxlength="60" />
-          <button type="button" id="btn-add-todo" class="btn-timer btn-play" style="padding:4px 10px; font-size:0.8rem; border-radius:6px;">+ Add</button>
+          <input type="text" id="todo-input" class="form-input" placeholder="Add focus task... (Press Enter)" maxlength="60" style="padding:8px 10px; font-size:0.84rem;" />
+          <button type="button" id="btn-add-todo" class="btn-timer btn-play" style="padding:6px 12px; font-size:0.82rem; border-radius:8px;">+ Add</button>
         </div>
         <ul id="todo-list" class="todo-list"></ul>
       </div>
-    </div>
+    </aside>
   </main>
 
   <!-- =========================================================
@@ -538,53 +560,81 @@
   </div>
 
   <!-- =========================================================
-       5. FOCUS NOISE & MUSIC MODAL
+       5. AUDIO DRAWER: 12 SOUNDSCAPES + STUDY MUSIC SEARCH
        ========================================================= -->
   <div id="study-noise-modal" class="modal-backdrop hidden">
-    <div class="modal-window" style="max-width:540px;">
+    <div class="modal-window" style="max-width:560px;">
       <div class="modal-header">
-        <h3>🎧 Study Noise & Audio Status</h3>
+        <h3>🎧 Focus Audio &amp; Study Music</h3>
         <button id="btn-close-noise" class="drawer-close-btn">&times;</button>
       </div>
 
-      <div class="modal-body" style="display:flex; flex-direction:column; gap:16px;">
-        <!-- Noise Generator Presets -->
-        <div class="noise-panel-box">
-          <h4>🔊 Built-in Web Audio Generators</h4>
-          <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;">Zero network required. Continuous real-time focus sound synthesis.</p>
+      <div class="board-tab-switcher" style="margin:0 16px;">
+        <button type="button" class="audio-tab-btn active" data-audiotab="soundscapes">🎧 Soundscapes</button>
+        <button type="button" class="audio-tab-btn" data-audiotab="music">🎵 Study Music</button>
+      </div>
+
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
+        <!-- Tab 1: 12 Pure Web Audio Soundscapes -->
+        <div id="audio-tab-soundscapes" class="noise-panel-box">
+          <p style="font-size:0.75rem; color:var(--text-muted); margin:0 0 6px 0;">12 pure Web Audio soundscapes. Zero external MP3s.</p>
+
+          <div class="soundscape-group-label">Noise</div>
           <div class="noise-buttons-grid">
-            <button type="button" class="btn-noise-preset" data-noise="brown">🟫 Brown Noise (ADHD)</button>
             <button type="button" class="btn-noise-preset" data-noise="white">⬜ White Noise</button>
-            <button type="button" class="btn-noise-preset" data-noise="pink">🌧️ Pink Rain Noise</button>
-            <button type="button" class="btn-noise-preset" data-noise="binaural">🧠 40Hz Gamma Waves</button>
+            <button type="button" class="btn-noise-preset" data-noise="pink">🌸 Pink Noise</button>
+            <button type="button" class="btn-noise-preset" data-noise="brown">🟫 Deep Brown (40Hz)</button>
+            <button type="button" class="btn-noise-preset" data-noise="green">🌿 Green Noise</button>
           </div>
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-top:10px;">
+
+          <div class="soundscape-group-label">Binaural Beats</div>
+          <div class="noise-buttons-grid">
+            <button type="button" class="btn-noise-preset" data-noise="delta">😴 Delta (2Hz)</button>
+            <button type="button" class="btn-noise-preset" data-noise="theta">🧘 Theta (6Hz)</button>
+            <button type="button" class="btn-noise-preset" data-noise="alpha">🌊 Alpha (10Hz)</button>
+            <button type="button" class="btn-noise-preset" data-noise="beta">⚡ Beta (18Hz)</button>
+            <button type="button" class="btn-noise-preset" data-noise="gamma">🧠 Gamma (40Hz)</button>
+          </div>
+
+          <div class="soundscape-group-label">Ambient</div>
+          <div class="noise-buttons-grid">
+            <button type="button" class="btn-noise-preset" data-noise="rain">🌧️ Soft Rain</button>
+            <button type="button" class="btn-noise-preset" data-noise="fireplace">🔥 Fireplace Crackle</button>
+            <button type="button" class="btn-noise-preset" data-noise="wind">🌬️ Midnight Wind</button>
+          </div>
+
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-top:12px;">
             <div style="display:flex; align-items:center; gap:8px;">
               <span style="font-size:0.75rem;">Volume:</span>
-              <input type="range" id="noise-volume-slider" min="0" max="100" value="50" style="width:100px;">
+              <input type="range" id="noise-volume-slider" min="0" max="100" value="50" style="width:110px;">
             </div>
-            <button type="button" id="btn-stop-noise" class="btn-timer btn-reset" style="padding:4px 12px; font-size:0.75rem;">⏹️ Stop Noise</button>
+            <button type="button" id="btn-stop-noise" class="btn-timer btn-reset" style="padding:4px 12px; font-size:0.75rem;">⏹️ Stop Soundscape</button>
           </div>
         </div>
 
-        <!-- YouTube / Music Status & Peer Callout Accountability -->
-        <div class="noise-panel-box">
-          <h4>📱 Now Listening (YouTube / External Music)</h4>
+        <!-- Tab 2: Zero-Key YouTube Study Music Search -->
+        <div id="audio-tab-music" class="noise-panel-box hidden">
+          <h4 style="margin-bottom:4px;">🎵 Study Music Search</h4>
           <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">
-            Shown next to your name in the room so peers know you're in study mode. If caught playing non-study pop/party songs, peers can call you out!
+            Search songs or study mixes via YouTube IFrame API. Syncs <code>🎵 Now Playing</code> to your tile.
           </p>
-          <div class="form-group" style="margin-bottom:8px;">
-            <input type="text" id="input-custom-track" class="form-input" placeholder="e.g. YouTube: Lofi Girl Study Stream or Drake - Nonstop">
+          <div style="display:flex; gap:6px; margin-bottom:10px;">
+            <input type="text" id="input-custom-track" class="form-input" placeholder="Search song or study mix..." style="flex:1;">
+            <button type="button" id="btn-set-custom-track" class="btn-primary-action" style="padding:8px 14px; font-size:0.84rem;">Search</button>
           </div>
-          <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
-            <label style="font-size:0.78rem; display:flex; align-items:center; gap:6px; cursor:pointer;">
-              <input type="checkbox" id="check-is-study-audio" checked>
-              <span>Verified Focus Audio (Lofi / Instrumental / Classical)</span>
-            </label>
+          <div id="yt-player-wrapper" class="hidden" style="margin-bottom:10px; border-radius:10px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); background:#000;">
+            <div id="yt-player-container" style="width:100%; height:180px;"></div>
           </div>
-          <div style="display:flex; gap:8px;">
-            <button type="button" id="btn-set-custom-track" class="btn-primary-action" style="padding:8px 14px; font-size:0.85rem;">Broadcast Track Status</button>
-            <button type="button" id="btn-clear-track" class="btn-timer btn-reset" style="padding:8px 12px; font-size:0.85rem;">Clear</button>
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+            <div style="display:flex; gap:6px;">
+              <button type="button" id="btn-yt-play-pause" class="mod-btn">⏯️ Play/Pause</button>
+              <button type="button" id="btn-yt-next" class="mod-btn">⏭️ Next</button>
+              <button type="button" id="btn-clear-track" class="btn-timer btn-reset" style="padding:6px 10px; font-size:0.78rem;">Clear</button>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:0.75rem;">Vol:</span>
+              <input type="range" id="yt-volume-slider" min="0" max="100" value="60" style="width:90px;">
+            </div>
           </div>
         </div>
       </div>
@@ -592,17 +642,17 @@
   </div>
 
   <!-- =========================================================
-       5. COIN SHOP & STUDY PETS MODAL
+       5. STORE MODAL (THEMES & PEACEFUL DESK PETS)
        ========================================================= -->
   <div id="coin-shop-modal" class="modal hidden">
     <div class="modal-backdrop" id="coin-shop-backdrop"></div>
-    <div class="modal-card" style="max-width:580px;">
+    <div class="modal-card" style="max-width:620px;">
       <div class="modal-header">
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-size:1.4rem;">🛍️</span>
           <div>
-            <h3>Scholar Coin Shop</h3>
-            <small style="color:var(--text-muted);">Spend study coins earned by finishing clean pomodoro sessions.</small>
+            <h3>Scholar Store</h3>
+            <small style="color:var(--text-muted);">Earn +1 Coin/focus min &amp; +15 Bonus per clean Pomodoro.</small>
           </div>
         </div>
         <button id="btn-close-shop" class="modal-close-btn">&times;</button>
@@ -614,85 +664,94 @@
       </div>
 
       <div class="shop-tabs">
-        <button type="button" class="shop-tab-btn active" data-tab="pets">🐾 Study Pets</button>
-        <button type="button" class="shop-tab-btn" data-tab="frames">✨ Profile Frames</button>
-        <button type="button" class="shop-tab-btn" data-tab="themes">🎨 Themes</button>
+        <button type="button" class="shop-tab-btn active" data-tab="themes">🎨 Themes (8)</button>
+        <button type="button" class="shop-tab-btn" data-tab="pets">🐾 Pets (5)</button>
       </div>
 
-      <div class="shop-tab-content active" id="shop-tab-pets">
+      <div class="shop-tab-content active" id="shop-tab-themes">
+        <div class="shop-grid">
+          <div class="shop-card" data-item="obsidian" data-cost="0" data-type="themes">
+            <div class="shop-item-preview" style="background:#0B0C0F; color:#30d158; border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:6px;">🌑 Obsidian</div>
+            <h4>Obsidian Dark</h4>
+            <p>Crisp dark slate workspace.</p>
+            <div class="shop-card-footer"><span class="shop-cost">Free</span><button type="button" class="shop-action-btn equip-btn" data-id="obsidian" data-type="themes">Equipped</button></div>
+          </div>
+          <div class="shop-card" data-item="paper" data-cost="0" data-type="themes">
+            <div class="shop-item-preview" style="background:#f8fafc; color:#059669; border:1px solid #cbd5e1; border-radius:8px; padding:6px;">📄 Paper</div>
+            <h4>Paper Light</h4>
+            <p>Clean daylight study paper.</p>
+            <div class="shop-card-footer"><span class="shop-cost">Free</span><button type="button" class="shop-action-btn equip-btn" data-id="paper" data-type="themes">Equip</button></div>
+          </div>
+          <div class="shop-card" data-item="midnight-rain" data-cost="100" data-type="themes">
+            <div class="shop-item-preview" style="background:#070b14; color:#38bdf8; border:1px solid rgba(56,189,248,0.3); border-radius:8px; padding:6px;">🌧️ Midnight</div>
+            <h4>Midnight Rain</h4>
+            <p>Deep slate &amp; rain cyan.</p>
+            <div class="shop-card-footer"><span class="shop-cost">🪙 100c</span><button type="button" class="shop-action-btn buy-btn" data-id="midnight-rain" data-type="themes" data-cost="100">Buy</button></div>
+          </div>
+          <div class="shop-card" data-item="warm-lamp" data-cost="150" data-type="themes">
+            <div class="shop-item-preview" style="background:#120e0a; color:#f59e0b; border:1px solid rgba(245,158,11,0.3); border-radius:8px; padding:6px;">🛋️ Desk Lamp</div>
+            <h4>Warm Desk Lamp</h4>
+            <p>Cozy amber late-night glow.</p>
+            <div class="shop-card-footer"><span class="shop-cost">🪙 150c</span><button type="button" class="shop-action-btn buy-btn" data-id="warm-lamp" data-type="themes" data-cost="150">Buy</button></div>
+          </div>
+          <div class="shop-card" data-item="matcha-zen" data-cost="200" data-type="themes">
+            <div class="shop-item-preview" style="background:#0b110d; color:#6ee7b7; border:1px solid rgba(110,231,183,0.3); border-radius:8px; padding:6px;">🍵 Matcha</div>
+            <h4>Matcha Zen</h4>
+            <p>Calm botanical green focus.</p>
+            <div class="shop-card-footer"><span class="shop-cost">🪙 200c</span><button type="button" class="shop-action-btn buy-btn" data-id="matcha-zen" data-type="themes" data-cost="200">Buy</button></div>
+          </div>
+          <div class="shop-card" data-item="cyber-glass" data-cost="300" data-type="themes">
+            <div class="shop-item-preview" style="background:#090614; color:#e879f9; border:1px solid rgba(232,121,249,0.3); border-radius:8px; padding:6px;">🌆 Cyber</div>
+            <h4>Cyber Glass</h4>
+            <p>Violet neon glass aesthetics.</p>
+            <div class="shop-card-footer"><span class="shop-cost">🪙 300c</span><button type="button" class="shop-action-btn buy-btn" data-id="cyber-glass" data-type="themes" data-cost="300">Buy</button></div>
+          </div>
+          <div class="shop-card" data-item="nordic-frost" data-cost="350" data-type="themes">
+            <div class="shop-item-preview" style="background:#0c1319; color:#67e8f9; border:1px solid rgba(103,232,249,0.3); border-radius:8px; padding:6px;">❄️ Nordic</div>
+            <h4>Nordic Frost</h4>
+            <p>Crisp arctic slate palette.</p>
+            <div class="shop-card-footer"><span class="shop-cost">🪙 350c</span><button type="button" class="shop-action-btn buy-btn" data-id="nordic-frost" data-type="themes" data-cost="350">Buy</button></div>
+          </div>
+          <div class="shop-card" data-item="crimson-night" data-cost="400" data-type="themes">
+            <div class="shop-item-preview" style="background:#12090b; color:#fb7185; border:1px solid rgba(251,113,133,0.3); border-radius:8px; padding:6px;">🌹 Crimson</div>
+            <h4>Crimson Night</h4>
+            <p>High-contrast ruby focus.</p>
+            <div class="shop-card-footer"><span class="shop-cost">🪙 400c</span><button type="button" class="shop-action-btn buy-btn" data-id="crimson-night" data-type="themes" data-cost="400">Buy</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="shop-tab-content hidden" id="shop-tab-pets">
         <div class="shop-grid">
           <div class="shop-card" data-item="cat" data-cost="0" data-type="pets">
             <div class="shop-item-preview">🐱</div>
             <h4>Pixel Cat</h4>
-            <p>Purrs gently as you focus and celebrates with yarn confetti on victories.</p>
-            <div class="shop-card-footer">
-              <span class="shop-cost">🪙 Free (Default)</span>
-              <button type="button" class="shop-action-btn equip-btn" data-id="cat" data-type="pets">Equipped</button>
-            </div>
+            <p>Calm breathing desk companion.</p>
+            <div class="shop-card-footer"><span class="shop-cost">Free</span><button type="button" class="shop-action-btn equip-btn" data-id="cat" data-type="pets">Equipped</button></div>
           </div>
-          <div class="shop-card" data-item="owl" data-cost="500" data-type="pets">
-            <div class="shop-item-preview">🦉</div>
-            <h4>Cyber Owl</h4>
-            <p>Wide vigilant eyes track nocturnal study hours and night grinds.</p>
-            <div class="shop-card-footer">
-              <span class="shop-cost">🪙 500 Coins</span>
-              <button type="button" class="shop-action-btn buy-btn" data-id="owl" data-type="pets" data-cost="500">Buy</button>
-            </div>
-          </div>
-          <div class="shop-card" data-item="shiba" data-cost="500" data-type="pets">
+          <div class="shop-card" data-item="shiba" data-cost="150" data-type="pets">
             <div class="shop-item-preview">🐕</div>
-            <h4>Shiba Inu</h4>
-            <p>Loyal companion sitting right next to your desk timer cheering you on.</p>
-            <div class="shop-card-footer">
-              <span class="shop-cost">🪙 500 Coins</span>
-              <button type="button" class="shop-action-btn buy-btn" data-id="shiba" data-type="pets" data-cost="500">Buy</button>
-            </div>
+            <h4>Study Shiba</h4>
+            <p>Loyal focus buddy on your tile.</p>
+            <div class="shop-card-footer"><span class="shop-cost">🪙 150c</span><button type="button" class="shop-action-btn buy-btn" data-id="shiba" data-type="pets" data-cost="150">Buy</button></div>
           </div>
-        </div>
-      </div>
-
-      <div class="shop-tab-content hidden" id="shop-tab-frames">
-        <div class="shop-grid">
-          <div class="shop-card" data-item="neon" data-cost="100" data-type="frames">
-            <div class="shop-item-preview" style="border:2px solid #06b6d4; border-radius:10px; padding:6px;">🩵 Neon Cyan</div>
-            <h4>Neon Cyan Frame</h4>
-            <p>Glowing futuristic cyan border around your study video tile.</p>
-            <div class="shop-card-footer">
-              <span class="shop-cost">🪙 100 Coins</span>
-              <button type="button" class="shop-action-btn buy-btn" data-id="neon" data-type="frames" data-cost="100">Buy</button>
-            </div>
+          <div class="shop-card" data-item="owl" data-cost="300" data-type="pets">
+            <div class="shop-item-preview">🦉</div>
+            <h4>Night Owl</h4>
+            <p>Steady nocturnal study guard.</p>
+            <div class="shop-card-footer"><span class="shop-cost">🪙 300c</span><button type="button" class="shop-action-btn buy-btn" data-id="owl" data-type="pets" data-cost="300">Buy</button></div>
           </div>
-          <div class="shop-card" data-item="gold" data-cost="100" data-type="frames">
-            <div class="shop-item-preview" style="border:2px solid #f59e0b; border-radius:10px; padding:6px;">💛 Gold Aura</div>
-            <h4>Scholar Gold Aura</h4>
-            <p>Radiant gold border showing your focus master status.</p>
-            <div class="shop-card-footer">
-              <span class="shop-cost">🪙 100 Coins</span>
-              <button type="button" class="shop-action-btn buy-btn" data-id="gold" data-type="frames" data-cost="100">Buy</button>
-            </div>
+          <div class="shop-card" data-item="bonsai" data-cost="500" data-type="pets">
+            <div class="shop-item-preview">🪴</div>
+            <h4>Bonsai Spirit</h4>
+            <p>Serene zen desk spirit.</p>
+            <div class="shop-card-footer"><span class="shop-cost">🪙 500c</span><button type="button" class="shop-action-btn buy-btn" data-id="bonsai" data-type="pets" data-cost="500">Buy</button></div>
           </div>
-        </div>
-      </div>
-
-      <div class="shop-tab-content hidden" id="shop-tab-themes">
-        <div class="shop-grid">
-          <div class="shop-card" data-item="cyberpunk" data-cost="300" data-type="themes">
-            <div class="shop-item-preview">🌃 Cyberpunk</div>
-            <h4>Midnight Neon</h4>
-            <p>Deep pitch-black background with vibrant high-contrast accents.</p>
-            <div class="shop-card-footer">
-              <span class="shop-cost">🪙 300 Coins</span>
-              <button type="button" class="shop-action-btn buy-btn" data-id="cyberpunk" data-type="themes" data-cost="300">Buy</button>
-            </div>
-          </div>
-          <div class="shop-card" data-item="lofi" data-cost="300" data-type="themes">
-            <div class="shop-item-preview">🌸 Tokyo Lofi</div>
-            <h4>Pastel Sakura</h4>
-            <p>Warm cozy pastel aesthetics for calming evening study sessions.</p>
-            <div class="shop-card-footer">
-              <span class="shop-cost">🪙 300 Coins</span>
-              <button type="button" class="shop-action-btn buy-btn" data-id="lofi" data-type="themes" data-cost="300">Buy</button>
-            </div>
+          <div class="shop-card" data-item="fox" data-cost="800" data-type="pets">
+            <div class="shop-item-preview">🦊</div>
+            <h4>Astro Fox</h4>
+            <p>Cosmic deep-work companion.</p>
+            <div class="shop-card-footer"><span class="shop-cost">🪙 800c</span><button type="button" class="shop-action-btn buy-btn" data-id="fox" data-type="pets" data-cost="800">Buy</button></div>
           </div>
         </div>
       </div>
@@ -845,13 +904,13 @@
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=4.6"></script>
-  <script src="js/noise-generator.js?v=4.6"></script>
-  <script src="js/firebase-config.js?v=4.6"></script>
-  <script src="js/leaderboard.js?v=4.6"></script>
-  <script src="js/timer.js?v=4.6"></script>
-  <script src="js/webrtc-room.js?v=4.6"></script>
-  <script src="js/trigger-engine.js?v=4.6"></script>
-  <script src="js/app.js?v=4.6"></script>
+  <script src="js/soundboard-admin.js?v=4.7"></script>
+  <script src="js/noise-generator.js?v=4.7"></script>
+  <script src="js/firebase-config.js?v=4.7"></script>
+  <script src="js/leaderboard.js?v=4.7"></script>
+  <script src="js/timer.js?v=4.7"></script>
+  <script src="js/webrtc-room.js?v=4.7"></script>
+  <script src="js/trigger-engine.js?v=4.7"></script>
+  <script src="js/app.js?v=4.7"></script>
 </body>
 </html>

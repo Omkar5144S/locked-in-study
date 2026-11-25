@@ -439,6 +439,11 @@ document.addEventListener('DOMContentLoaded', () => {
     watermarkInterval = setInterval(() => {
       updateWatermark(displayName);
     }, 15000);
+
+    // Subscribe to Real-Time Room Chat
+    if (typeof subscribeRoomChat === 'function') {
+      subscribeRoomChat(cleanRoom);
+    }
   }
 
   // Leave Room Handlers (Header & Dock)
@@ -452,6 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
             clearInterval(watermarkInterval);
             watermarkInterval = null;
           }
+          if (typeof cleanupRoomChat === 'function') cleanupRoomChat();
           window.WebRTCRoom.leaveStudyRoom();
         }
       });
@@ -1207,7 +1213,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Preset noise buttons
+  // Audio Drawer Tabs (Soundscapes | Study Music)
+  document.querySelectorAll('.audio-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.audio-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const target = btn.getAttribute('data-audiotab');
+      const tabSounds = document.getElementById('audio-tab-soundscapes');
+      const tabMusic = document.getElementById('audio-tab-music');
+      if (tabSounds) tabSounds.classList.toggle('hidden', target !== 'soundscapes');
+      if (tabMusic) tabMusic.classList.toggle('hidden', target !== 'music');
+    });
+  });
+
+  // 12 Pure Web Audio Soundscape Buttons
   document.querySelectorAll('.btn-noise-preset').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.btn-noise-preset').forEach(b => b.classList.remove('active'));
@@ -1216,10 +1235,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (window.StudyNoise) {
         window.StudyNoise.ensureAudio();
-        if (noiseType === 'brown') window.StudyNoise.playBrownNoise();
-        else if (noiseType === 'white') window.StudyNoise.playWhiteNoise();
-        else if (noiseType === 'pink') window.StudyNoise.playPinkNoise();
-        else if (noiseType === 'binaural') window.StudyNoise.playBinauralBeats();
+        if (window.StudyNoise.playSoundscape) {
+          window.StudyNoise.playSoundscape(noiseType);
+        }
       }
     });
   });
@@ -1242,29 +1260,59 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Set YouTube / External track status
+  // Zero-Key YouTube Study Music Search & Controls
+  const ytPlayPauseBtn = document.getElementById('btn-yt-play-pause');
+  const ytNextBtn = document.getElementById('btn-yt-next');
+  const ytVolSlider = document.getElementById('yt-volume-slider');
+
   if (setTrackBtn && customTrackInput) {
-    setTrackBtn.addEventListener('click', () => {
-      const track = (customTrackInput.value || '').trim();
-      const isApproved = checkStudyAudio ? checkStudyAudio.checked : true;
-      if (!track) {
-        alert('Please enter a track title or YouTube stream name.');
+    const triggerSearch = () => {
+      const query = (customTrackInput.value || '').trim();
+      if (!query) {
+        showToast('Enter a song or study mix to search.');
         return;
       }
-      if (window.StudyNoise) {
-        window.StudyNoise.setCustomStudyTrack(track, isApproved);
-        alert(`Broadcasting audio status: "${track}" (${isApproved ? 'Focus Audio' : 'Non-Study Alert!'})`);
+      if (window.StudyNoise && window.StudyNoise.searchStudyMusic) {
+        window.StudyNoise.searchStudyMusic(query);
+        showToast(`🎵 Searching: ${query}`);
       }
-      if (noiseModal) noiseModal.classList.add('hidden');
+    };
+    setTrackBtn.addEventListener('click', triggerSearch);
+    customTrackInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        triggerSearch();
+      }
+    });
+  }
+
+  if (ytPlayPauseBtn) {
+    ytPlayPauseBtn.addEventListener('click', () => {
+      if (window.StudyNoise && window.StudyNoise.toggleYouTubePlayPause) {
+        window.StudyNoise.toggleYouTubePlayPause();
+      }
+    });
+  }
+  if (ytNextBtn) {
+    ytNextBtn.addEventListener('click', () => {
+      if (window.StudyNoise && window.StudyNoise.nextYouTubeTrack) {
+        window.StudyNoise.nextYouTubeTrack();
+      }
+    });
+  }
+  if (ytVolSlider) {
+    ytVolSlider.addEventListener('input', (e) => {
+      if (window.StudyNoise && window.StudyNoise.setYouTubeVolume) {
+        window.StudyNoise.setYouTubeVolume(e.target.value);
+      }
     });
   }
 
   if (clearTrackBtn) {
     clearTrackBtn.addEventListener('click', () => {
       if (customTrackInput) customTrackInput.value = '';
-      if (window.StudyNoise) {
-        window.StudyNoise.stopNoise();
-        window.StudyNoise.setNowListening('None');
+      if (window.StudyNoise && window.StudyNoise.clearStudyMusic) {
+        window.StudyNoise.clearStudyMusic();
       }
     });
   }
@@ -1443,18 +1491,131 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTodos();
   }
 
-  const dockTodoBtn = document.getElementById('dock-todo-btn');
-  if (dockTodoBtn && todoWidget) {
-    dockTodoBtn.addEventListener('click', () => {
-      todoWidget.classList.toggle('hidden');
+  // Tabbed Room Drawer (💬 Chat | ✅ To-Do) & Unread Dot
+  const dockRoomBtn = document.getElementById('dock-room-btn');
+  const roomDrawer = document.getElementById('room-drawer');
+  const closeRoomDrawerBtn = document.getElementById('btn-close-room-drawer');
+  const roomUnreadDot = document.getElementById('room-unread-dot');
+  const roomChatMessagesEl = document.getElementById('room-chat-messages');
+  const roomChatInput = document.getElementById('room-chat-input');
+  const sendRoomChatBtn = document.getElementById('btn-send-room-chat');
+  let unsubscribeRoomChat = null;
+  let lastSeenMessageCount = 0;
+
+  function cleanupRoomChat() {
+    if (unsubscribeRoomChat) {
+      unsubscribeRoomChat();
+      unsubscribeRoomChat = null;
+    }
+    lastSeenMessageCount = 0;
+    if (roomUnreadDot) roomUnreadDot.classList.add('hidden');
+    if (roomChatMessagesEl) {
+      roomChatMessagesEl.innerHTML = '<div class="empty-state">No messages yet. Say hi or share a quick status!</div>';
+    }
+  }
+
+  function renderRoomChatMessages(messages) {
+    if (!roomChatMessagesEl) return;
+    const isDrawerClosed = !roomDrawer || roomDrawer.classList.contains('hidden');
+    if (isDrawerClosed && messages.length > lastSeenMessageCount && lastSeenMessageCount > 0) {
+      if (roomUnreadDot) roomUnreadDot.classList.remove('hidden');
+    } else if (!isDrawerClosed) {
+      lastSeenMessageCount = messages.length;
+      if (roomUnreadDot) roomUnreadDot.classList.add('hidden');
+    }
+    if (lastSeenMessageCount === 0 && messages.length > 0 && isDrawerClosed) {
+      // Mark initial load count so only new incoming messages trigger the unread dot
+      lastSeenMessageCount = messages.length;
+    }
+
+    if (!messages.length) {
+      roomChatMessagesEl.innerHTML = '<div class="empty-state">No messages yet. Say hi or share a quick status!</div>';
+      return;
+    }
+
+    roomChatMessagesEl.innerHTML = '';
+    messages.forEach((m) => {
+      const div = document.createElement('div');
+      div.className = 'chat-msg-item';
+      const timeStr = m.clientTs ? new Date(m.clientTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      div.innerHTML = `
+        <div class="chat-msg-meta">
+          <strong>${escapeHtml(m.senderName || 'Scholar')}</strong>
+          <span>${escapeHtml(timeStr)}</span>
+        </div>
+        <div>${escapeHtml(m.text)}</div>
+      `;
+      roomChatMessagesEl.appendChild(div);
+    });
+    roomChatMessagesEl.scrollTop = roomChatMessagesEl.scrollHeight;
+  }
+
+  function subscribeRoomChat(roomId) {
+    cleanupRoomChat();
+    if (window.FirebaseSync && window.FirebaseSync.listenToRoomMessages) {
+      unsubscribeRoomChat = window.FirebaseSync.listenToRoomMessages(roomId, renderRoomChatMessages);
+    }
+  }
+
+  async function sendChatText(text) {
+    const clean = String(text || '').trim().slice(0, 200);
+    const roomId = window.WebRTCRoom && window.WebRTCRoom.roomId;
+    if (!clean || !roomId || !window.FirebaseSync?.sendRoomMessage) return;
+    try {
+      await window.FirebaseSync.sendRoomMessage(roomId, clean, (displayNameInput && displayNameInput.value) || 'Scholar');
+    } catch (err) {
+      showToast('❌ Failed to send message: ' + (err.message || 'Check connection'));
+    }
+  }
+
+  if (dockRoomBtn && roomDrawer) {
+    dockRoomBtn.addEventListener('click', () => {
+      const opening = roomDrawer.classList.contains('hidden');
+      roomDrawer.classList.toggle('hidden');
+      if (opening && roomUnreadDot) {
+        roomUnreadDot.classList.add('hidden');
+        if (roomChatMessagesEl) roomChatMessagesEl.scrollTop = roomChatMessagesEl.scrollHeight;
+      }
+    });
+  }
+  if (closeRoomDrawerBtn && roomDrawer) {
+    closeRoomDrawerBtn.addEventListener('click', () => roomDrawer.classList.add('hidden'));
+  }
+
+  document.querySelectorAll('.room-drawer-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.room-drawer-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.getAttribute('data-roomtab');
+      const chatTab = document.getElementById('room-tab-chat');
+      const todoTab = document.getElementById('room-tab-todo');
+      if (chatTab) chatTab.classList.toggle('hidden', tab !== 'chat');
+      if (todoTab) todoTab.classList.toggle('hidden', tab !== 'todo');
+    });
+  });
+
+  if (sendRoomChatBtn && roomChatInput) {
+    sendRoomChatBtn.addEventListener('click', () => {
+      const txt = roomChatInput.value;
+      roomChatInput.value = '';
+      sendChatText(txt);
+    });
+    roomChatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const txt = roomChatInput.value;
+        roomChatInput.value = '';
+        sendChatText(txt);
+      }
     });
   }
 
-  if (todoToggleBtn && todoWidget) {
-    todoToggleBtn.addEventListener('click', () => {
-      todoWidget.classList.add('hidden');
+  document.querySelectorAll('.chat-chip-btn').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const msg = chip.getAttribute('data-msg');
+      if (msg) sendChatText(msg);
     });
-  }
+  });
 
   if (addTodoBtn) {
     addTodoBtn.addEventListener('click', addTodoItem);
@@ -1484,21 +1645,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!cu) return;
 
     // Guarantee inventory has correct defaults
-    if (!cu.inventory) cu.inventory = { pets: ['cat'], frames: [], themes: [] };
+    if (!cu.inventory) cu.inventory = { pets: ['cat'], frames: [], themes: ['obsidian', 'paper'] };
     if (!cu.inventory.pets) cu.inventory.pets = ['cat'];
-    if (!cu.inventory.frames) cu.inventory.frames = [];
-    if (!cu.inventory.themes) cu.inventory.themes = [];
-    if (!cu.activePet) cu.activePet = 'cat';
-    // Pixel Cat is always free and owned
+    if (!cu.inventory.themes) cu.inventory.themes = ['obsidian', 'paper'];
+    if (!cu.equippedPet) cu.equippedPet = cu.activePet || 'cat';
+    if (!cu.equippedTheme) cu.equippedTheme = localStorage.getItem('lockedin_theme') || 'obsidian';
     if (!cu.inventory.pets.includes('cat')) cu.inventory.pets.push('cat');
+    if (!cu.inventory.themes.includes('obsidian')) cu.inventory.themes.push('obsidian');
+    if (!cu.inventory.themes.includes('paper')) cu.inventory.themes.push('paper');
 
     if (shopUserCoins) {
       shopUserCoins.textContent = `🪙 ${cu.coins || 0} Coins`;
     }
     const inv = cu.inventory;
-    const activePet = cu.activePet;
+    const activePet = cu.equippedPet || cu.activePet;
+    const activeTheme = cu.equippedTheme;
 
-    // Update Pet buttons
+    // Update Pet buttons (5 Peaceful Desk Pets)
     document.querySelectorAll('#shop-tab-pets .shop-card').forEach(card => {
       const id = card.dataset.item;
       const btn = card.querySelector('.shop-action-btn');
@@ -1513,7 +1676,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.onclick = () => {
           window.Leaderboard.setActivePet(id);
           updateShopUI();
-          showToast(`Equipped companion: ${id.toUpperCase()}`);
+          showToast(`Equipped pet: ${card.querySelector('h4').textContent}`);
         };
       } else {
         btn.className = 'shop-action-btn buy-btn';
@@ -1523,59 +1686,44 @@ document.addEventListener('DOMContentLoaded', () => {
           if (window.Leaderboard.buyItem('pets', id, cost)) {
             window.Leaderboard.setActivePet(id);
             updateShopUI();
-            showToast(`Unlocked & equipped companion: ${id.toUpperCase()}! 🎉`);
+            showToast(`Unlocked & equipped: ${card.querySelector('h4').textContent}! 🎉`);
           } else {
-            showToast('⚠️ Not enough coins! Complete focus sessions to earn coins.');
+            showToast('⚠️ Not enough coins! Earn +1 coin/min during focus.');
           }
         };
       }
     });
 
-    // Update Frame buttons
-    document.querySelectorAll('#shop-tab-frames .shop-card').forEach(card => {
-      const id = card.dataset.item;
-      const btn = card.querySelector('.shop-action-btn');
-      if (!btn) return;
-      const isOwned = inv.frames && inv.frames.includes(id);
-      if (isOwned) {
-        btn.className = 'shop-action-btn owned-btn';
-        btn.textContent = 'Owned ✓';
-        btn.onclick = null;
-      } else {
-        btn.className = 'shop-action-btn buy-btn';
-        btn.textContent = 'Buy';
-        btn.onclick = () => {
-          const cost = parseInt(card.dataset.cost, 10);
-          if (window.Leaderboard.buyItem('frames', id, cost)) {
-            updateShopUI();
-            showToast(`Unlocked frame: ${card.querySelector('h4').textContent}! ✨`);
-          } else {
-            showToast('⚠️ Not enough coins!');
-          }
-        };
-      }
-    });
-
-    // Update Theme buttons
+    // Update Theme buttons (8 CSS-Variable Themes)
     document.querySelectorAll('#shop-tab-themes .shop-card').forEach(card => {
       const id = card.dataset.item;
       const btn = card.querySelector('.shop-action-btn');
       if (!btn) return;
+      const isEquipped = id === activeTheme;
       const isOwned = inv.themes && inv.themes.includes(id);
-      if (isOwned) {
-        btn.className = 'shop-action-btn owned-btn';
-        btn.textContent = 'Owned ✓';
+      if (isEquipped) {
+        btn.className = 'shop-action-btn equip-btn';
+        btn.textContent = 'Equipped ✓';
         btn.onclick = null;
+      } else if (isOwned) {
+        btn.className = 'shop-action-btn equip-btn';
+        btn.textContent = 'Equip';
+        btn.onclick = () => {
+          window.Leaderboard.setActiveTheme(id);
+          updateShopUI();
+          showToast(`Applied theme: ${card.querySelector('h4').textContent} 🎨`);
+        };
       } else {
         btn.className = 'shop-action-btn buy-btn';
         btn.textContent = 'Buy';
         btn.onclick = () => {
           const cost = parseInt(card.dataset.cost, 10);
           if (window.Leaderboard.buyItem('themes', id, cost)) {
+            window.Leaderboard.setActiveTheme(id);
             updateShopUI();
-            showToast(`Unlocked theme: ${card.querySelector('h4').textContent}! 🎨`);
+            showToast(`Unlocked & applied: ${card.querySelector('h4').textContent}! 🎨`);
           } else {
-            showToast('⚠️ Not enough coins!');
+            showToast('⚠️ Not enough coins! Earn +1 coin/min during focus.');
           }
         };
       }

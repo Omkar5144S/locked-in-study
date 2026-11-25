@@ -154,6 +154,16 @@ class FirebaseManager {
               if (typeof cloudProfile.dailyStreak === 'number') window.Leaderboard.currentUser.dailyStreak = cloudProfile.dailyStreak;
               if (cloudProfile.lastStudyDate) window.Leaderboard.currentUser.lastStudyDate = cloudProfile.lastStudyDate;
               if (Array.isArray(cloudProfile.unlockedBadges)) window.Leaderboard.currentUser.unlockedBadges = cloudProfile.unlockedBadges;
+              if (Array.isArray(cloudProfile.unlockedThemes)) window.Leaderboard.currentUser.unlockedThemes = cloudProfile.unlockedThemes;
+              if (cloudProfile.equippedTheme) {
+                window.Leaderboard.currentUser.equippedTheme = cloudProfile.equippedTheme;
+                if (window.Leaderboard.applyTheme) window.Leaderboard.applyTheme(cloudProfile.equippedTheme);
+              }
+              if (Array.isArray(cloudProfile.unlockedPets)) window.Leaderboard.currentUser.unlockedPets = cloudProfile.unlockedPets;
+              if (cloudProfile.equippedPet) {
+                window.Leaderboard.currentUser.equippedPet = cloudProfile.equippedPet;
+                window.Leaderboard.currentUser.activePet = cloudProfile.equippedPet;
+              }
             }
             if (typeof window.Leaderboard.renderHUD === 'function') window.Leaderboard.renderHUD();
             if (typeof window.Leaderboard.renderBoards === 'function') window.Leaderboard.renderBoards();
@@ -405,6 +415,10 @@ class FirebaseManager {
       dailyStreak: Math.max(0, Math.min(10000, Number(profile.dailyStreak || 1))),
       lastStudyDate: String(profile.lastStudyDate || new Date().toISOString().slice(0, 10)).slice(0, 50),
       unlockedBadges: Array.isArray(profile.unlockedBadges) ? profile.unlockedBadges.slice(0, 100) : ['pioneer'],
+      unlockedThemes: Array.isArray(profile.unlockedThemes) ? profile.unlockedThemes.slice(0, 30) : ['obsidian', 'paper'],
+      equippedTheme: String(profile.equippedTheme || 'obsidian').slice(0, 40),
+      unlockedPets: Array.isArray(profile.unlockedPets) ? profile.unlockedPets.slice(0, 30) : ['cat'],
+      equippedPet: String(profile.equippedPet || profile.activePet || 'cat').slice(0, 40),
       isVerified: isGoogleVerified,
       isAnonymous: this.auth.currentUser.isAnonymous,
       updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
@@ -698,6 +712,63 @@ class FirebaseManager {
     } catch (e) {
       console.warn('[Firebase] participant heartbeat error:', e);
     }
+  }
+
+  async updateParticipantNowPlaying(roomId, peerId, nowPlaying) {
+    if (!roomId || !peerId || !this.isConfigured || !this.db || !this.auth?.currentUser) return;
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    try {
+      await this.db.collection('rooms').doc(cleanRoom).collection('participants').doc(peerId).update({
+        nowPlaying: nowPlaying ? String(nowPlaying).slice(0, 80) : ''
+      });
+    } catch (e) {
+      console.warn('[Firebase] updateParticipantNowPlaying error:', e);
+    }
+  }
+
+  // Real-Time Room Chat: rooms/{roomId}/messages (last 50, 200 char max)
+  async sendRoomMessage(roomId, text, senderName) {
+    if (!roomId || !text) return;
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    const cleanText = String(text).trim().slice(0, 200);
+    if (!cleanText) return;
+    const uid = await this.ensureAuth();
+    const author = String(senderName || this.currentUser?.callSign || 'Scholar').trim().slice(0, 40);
+    await this.db.collection('rooms').doc(cleanRoom).collection('messages').add({
+      uid,
+      senderName: author,
+      text: cleanText,
+      createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+      clientTs: Date.now()
+    });
+  }
+
+  listenToRoomMessages(roomId, callback) {
+    if (!roomId || !this.isConfigured || !this.db) return () => {};
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    let innerUnsub = null;
+    let cancelled = false;
+
+    const attach = () => {
+      if (cancelled || innerUnsub || !this.auth?.currentUser) return;
+      innerUnsub = this.db.collection('rooms').doc(cleanRoom).collection('messages')
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .onSnapshot((snapshot) => {
+          const msgs = [];
+          snapshot.forEach(doc => msgs.push({ id: doc.id, ...doc.data() }));
+          msgs.reverse();
+          callback(msgs);
+        }, (err) => {
+          console.warn('[Firebase] listenToRoomMessages error:', err);
+        });
+    };
+
+    this.waitForAuth().then(() => attach());
+    return () => {
+      cancelled = true;
+      if (innerUnsub) innerUnsub();
+    };
   }
 
   async removeParticipantPresence(roomId, peerId, checkDeleteRoom = false) {

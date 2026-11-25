@@ -128,7 +128,7 @@ class StudyTimerManager {
         // VICTORY TRIGGER: bonus points, coins & XP
         let rewardMsg = '+25 bonus points!';
         if (window.Leaderboard && window.Leaderboard.awardPomodoroComplete) {
-          const res = window.Leaderboard.awardPomodoroComplete(this.focusDurationMinutes);
+          const res = window.Leaderboard.awardPomodoroComplete(this.focusDurationMinutes, this.triggersInCurrentBlock === 0);
           rewardMsg = `+${res.coinsEarned} 🪙 Coins, +${res.xpEarned} XP!`;
           if (res.leveledUp) {
             rewardMsg += ` 🎉 LEVELED UP TO LVL ${res.newLevel}!`;

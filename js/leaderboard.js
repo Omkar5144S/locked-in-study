@@ -19,10 +19,21 @@ class LeaderboardManager {
       dailyStreak: parseInt(localStorage.getItem('lockedin_daily_streak') || '1', 10),
       lastStudyDate: localStorage.getItem('lockedin_last_study_date') || new Date().toISOString().split('T')[0],
       activePet: localStorage.getItem('lockedin_active_pet') || 'cat',
+      equippedPet: localStorage.getItem('lockedin_active_pet') || 'cat',
+      equippedTheme: localStorage.getItem('lockedin_theme') || 'obsidian',
       unlockedBadges: JSON.parse(localStorage.getItem('lockedin_unlocked_badges') || '["FOUNDING_SCHOLAR"]'),
-      inventory: JSON.parse(localStorage.getItem('lockedin_inventory') || '{"pets":["cat"],"frames":[],"themes":[]}')
+      inventory: JSON.parse(localStorage.getItem('lockedin_inventory') || '{"pets":["cat"],"frames":[],"themes":["obsidian","paper"]}')
     };
+    if (!this.currentUser.inventory.themes || !this.currentUser.inventory.themes.length) {
+      this.currentUser.inventory.themes = ['obsidian', 'paper'];
+    }
+    if (!this.currentUser.inventory.pets || !this.currentUser.inventory.pets.length) {
+      this.currentUser.inventory.pets = ['cat'];
+    }
+    this.currentUser.unlockedThemes = this.currentUser.inventory.themes;
+    this.currentUser.unlockedPets = this.currentUser.inventory.pets;
     this.currentUser.level = Math.floor(this.currentUser.xp / 500) + 1;
+    this.applyTheme(this.currentUser.equippedTheme);
 
     this.defaultSeedData = [];
     this.initStorage();
@@ -49,8 +60,11 @@ class LeaderboardManager {
     localStorage.setItem('lockedin_coins', (this.currentUser.coins || 0).toString());
     localStorage.setItem('lockedin_daily_streak', (this.currentUser.dailyStreak || 1).toString());
     localStorage.setItem('lockedin_last_study_date', this.currentUser.lastStudyDate || '');
-    localStorage.setItem('lockedin_active_pet', this.currentUser.activePet || 'cat');
-    localStorage.setItem('lockedin_inventory', JSON.stringify(this.currentUser.inventory || { pets: ['cat'], frames: [], themes: [] }));
+    localStorage.setItem('lockedin_active_pet', this.currentUser.equippedPet || this.currentUser.activePet || 'cat');
+    localStorage.setItem('lockedin_theme', this.currentUser.equippedTheme || 'obsidian');
+    this.currentUser.unlockedThemes = (this.currentUser.inventory && this.currentUser.inventory.themes) || ['obsidian', 'paper'];
+    this.currentUser.unlockedPets = (this.currentUser.inventory && this.currentUser.inventory.pets) || ['cat'];
+    localStorage.setItem('lockedin_inventory', JSON.stringify(this.currentUser.inventory || { pets: ['cat'], frames: [], themes: ['obsidian', 'paper'] }));
 
     // Update in user list
     const users = this.getAllUsers();
@@ -82,10 +96,11 @@ class LeaderboardManager {
     }
   }
 
-  // Points Modifications
+  // Points & Currency Modifications (+1 Coin per verified focus minute)
   awardCleanStudyMinute() {
     this.currentUser.totalPoints += 2;
     this.currentUser.cleanStudyMinutes += 1;
+    this.currentUser.coins = (this.currentUser.coins || 0) + 1;
     this.saveCurrentUser();
     this.renderHUD();
   }
@@ -151,29 +166,21 @@ class LeaderboardManager {
     if (petEl) {
       const petMap = {
         cat: { icon: '🐱', name: 'Pixel Cat' },
-        owl: { icon: '🦉', name: 'Cyber Owl' },
-        shiba: { icon: '🐕', name: 'Shiba Inu' }
+        shiba: { icon: '🐕', name: 'Study Shiba' },
+        owl: { icon: '🦉', name: 'Night Owl' },
+        bonsai: { icon: '🪴', name: 'Bonsai Spirit' },
+        fox: { icon: '🦊', name: 'Astro Fox' }
       };
-      const p = petMap[this.currentUser.activePet] || petMap.cat;
+      const p = petMap[this.currentUser.equippedPet || this.currentUser.activePet] || petMap.cat;
       petEl.innerHTML = `<span class="pet-icon">${p.icon}</span> <span class="pet-name">${p.name}</span>`;
-      petEl.title = `Your Study Companion: ${p.name}`;
+      petEl.title = `Your Peaceful Desk Pet: ${p.name}`;
     }
   }
 
-  // Gamification Economy
-  awardPomodoroComplete(focusMinutes = 25) {
-    let coinsEarned = 50;
-    let xpEarned = 100;
-    if (focusMinutes >= 90) {
-      coinsEarned = 180;
-      xpEarned = 360;
-    } else if (focusMinutes >= 60) {
-      coinsEarned = 120;
-      xpEarned = 240;
-    } else if (focusMinutes >= 50) {
-      coinsEarned = 100;
-      xpEarned = 200;
-    }
+  // Gamification Economy (+15 Bonus Coins for full clean Pomodoro)
+  awardPomodoroComplete(focusMinutes = 25, zeroStrikes = true) {
+    let coinsEarned = zeroStrikes ? 15 : 5;
+    let xpEarned = Math.max(50, focusMinutes * 4);
 
     this.currentUser.totalPoints += 25;
     this.currentUser.coins = (this.currentUser.coins || 0) + coinsEarned;
@@ -235,9 +242,23 @@ class LeaderboardManager {
 
   setActivePet(petId) {
     this.currentUser.activePet = petId;
+    this.currentUser.equippedPet = petId;
     localStorage.setItem('lockedin_active_pet', petId);
     this.saveCurrentUser();
     this.renderHUD();
+  }
+
+  applyTheme(themeId) {
+    const id = themeId || 'obsidian';
+    document.documentElement.setAttribute('data-theme', id);
+    document.documentElement.style.colorScheme = (id === 'paper' || id === 'vibrant') ? 'light' : 'dark';
+    localStorage.setItem('lockedin_theme', id);
+  }
+
+  setActiveTheme(themeId) {
+    this.currentUser.equippedTheme = themeId || 'obsidian';
+    this.applyTheme(this.currentUser.equippedTheme);
+    this.saveCurrentUser();
   }
 
   triggerPetCelebration() {

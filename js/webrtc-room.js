@@ -449,7 +449,18 @@ class WebRTCRoomManager {
       }
 
       // Render remote tile immediately so both peers see each other even before video tracks arrive
-      this.renderRemoteTile(remotePeerId, p);
+      const rTile = this.renderRemoteTile(remotePeerId, p);
+      if (rTile) {
+        const lBadge = rTile.querySelector('.listening-badge');
+        if (lBadge) {
+          if (p.nowPlaying) {
+            lBadge.textContent = `🎵 ${p.nowPlaying}`;
+            lBadge.classList.remove('hidden');
+          } else {
+            lBadge.classList.add('hidden');
+          }
+        }
+      }
 
       // If we don't already have an active connection with this peer:
       if (!this.peers.has(remotePeerId)) {
@@ -1075,6 +1086,20 @@ class WebRTCRoomManager {
       if (tile && evt.statusTag) {
         const badge = tile.querySelector('.subject-badge');
         if (badge) badge.textContent = evt.statusTag;
+      }
+    } else if (evt.type === 'NOW_LISTENING') {
+      const tile = document.getElementById(`tile-${peerKey}`);
+      if (tile) {
+        const badge = tile.querySelector('.listening-badge');
+        const label = evt.nowPlaying || (evt.trackTitle && evt.trackTitle !== 'None' ? evt.trackTitle : '');
+        if (badge) {
+          if (label) {
+            badge.textContent = `🎵 ${label}`;
+            badge.classList.remove('hidden');
+          } else {
+            badge.classList.add('hidden');
+          }
+        }
       }
     } else if (evt.type === 'SILENT_NUDGE' && evt.targetPeerId === this.peerId) {
       if (window.Soundboard && window.Soundboard.playSynthesizedTone) {
