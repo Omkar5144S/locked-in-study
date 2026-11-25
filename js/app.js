@@ -730,6 +730,37 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Camera Background / Privacy Filter Selector & Quick Cycle Button
+  const VIDEO_FILTERS = ['none', 'bg-blur', 'privacy-blur', 'bg-dim', 'bw'];
+  const videoFilterSelect = document.getElementById('video-filter-select');
+  const cycleFilterBtn = document.getElementById('btn-cycle-filter');
+
+  if (videoFilterSelect) {
+    const savedFilter = localStorage.getItem('lockedin_video_filter') || 'none';
+    videoFilterSelect.value = savedFilter;
+    videoFilterSelect.addEventListener('change', async () => {
+      const mode = videoFilterSelect.value;
+      if (window.WebRTCRoom && window.WebRTCRoom.setVideoFilter) {
+        await window.WebRTCRoom.setVideoFilter(mode);
+      } else {
+        localStorage.setItem('lockedin_video_filter', mode);
+      }
+      showToast(`🎭 Filter: ${videoFilterSelect.options[videoFilterSelect.selectedIndex].text}`);
+    });
+  }
+
+  if (cycleFilterBtn) {
+    cycleFilterBtn.addEventListener('click', async () => {
+      const cur = (window.WebRTCRoom && window.WebRTCRoom.activeVideoFilter) || localStorage.getItem('lockedin_video_filter') || 'none';
+      const idx = VIDEO_FILTERS.indexOf(cur);
+      const next = VIDEO_FILTERS[(idx + 1) % VIDEO_FILTERS.length];
+      if (window.WebRTCRoom && window.WebRTCRoom.setVideoFilter) {
+        await window.WebRTCRoom.setVideoFilter(next);
+      }
+      if (videoFilterSelect) videoFilterSelect.value = next;
+    });
+  }
+
   // Video Quality Selector (Auto, 1080p 60fps, 720p 60fps, 540p, 480p, 360p)
   const videoQualitySelect = document.getElementById('video-quality-select');
   if (videoQualitySelect) {

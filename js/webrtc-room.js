@@ -23,12 +23,24 @@ class WebRTCRoomManager {
     this.passcode = null;
 
     // Streams
+    this.rawCamStream = null;
     this.localCamStream = null;
     this.localScreenStream = null;
     this.isDualFeedActive = false;
     this.isCamSwapped = false;
     this.isScreenSharing = false;
     this.isCameraPrivacyActive = false;
+
+    // Live Video Background Filters
+    this.activeVideoFilter = localStorage.getItem('lockedin_video_filter') || 'none';
+    this._filterCanvas = null;
+    this._filterCtx = null;
+    this._filterVideoEl = null;
+    this._filterStream = null;
+    this._filterLoopId = null;
+    this._selfieSegmentation = null;
+    this._selfieSegLoading = false;
+    this._latestSegMask = null;
 
     // Active Peer connections: remotePeerId -> { pc, connectionId, isCaller, participant, candidateQueue, stream, unsubsConn, unsubsCand }
     this.peers = new Map();
@@ -161,7 +173,13 @@ class WebRTCRoomManager {
     }
 
     this.ensureAudioTrack(this.localCamStream);
+    this.rawCamStream = this.localCamStream;
     this.muteMic(true);
+
+    // Apply saved camera background filter if enabled
+    if (this.activeVideoFilter && this.activeVideoFilter !== 'none') {
+      await this.setVideoFilter(this.activeVideoFilter);
+    }
 
     // 2. If Dual Feed requested on desktop, request Screen Share
     if (this.isDualFeedActive) {
@@ -1024,6 +1042,186 @@ class WebRTCRoomManager {
     }
   }
 
+  stopVideoFilterLoop() {
+    if (this._filterLoopId) {
+      clearInterval(this._filterLoopId);
+      this._filterLoopId = null;
+    }
+    if (this._filterStream) {
+      try {
+        this._filterStream.getVideoTracks().forEach(t => t.stop());
+      } catch (e) {}
+      this._filterStream = null;
+    }
+  }
+
+  async _ensureSelfieSegmentation() {
+    if (this._selfieSegmentation || this._selfieSegLoading) return;
+    this._selfieSegLoading = true;
+    try {
+      if (!window.SelfieSegmentation) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js';
+          s.async = true;
+          s.crossOrigin = 'anonymous';
+          s.onload = resolve;
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+      if (window.SelfieSegmentation) {
+        const seg = new window.SelfieSegmentation({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
+        });
+        seg.setOptions({ modelSelection: 1 });
+        seg.onResults((results) => {
+          this._latestSegMask = results.segmentationMask || null;
+        });
+        this._selfieSegmentation = seg;
+        console.log('[WebRTC] MediaPipe SelfieSegmentation ready for background blur.');
+      }
+    } catch (err) {
+      console.warn('[WebRTC] SelfieSegmentation unavailable, using soft privacy blur fallback:', err);
+    } finally {
+      this._selfieSegLoading = false;
+    }
+  }
+
+  async setVideoFilter(filterName) {
+    const valid = ['none', 'bg-blur', 'privacy-blur', 'bg-dim', 'bw'];
+    const mode = valid.includes(filterName) ? filterName : 'none';
+    this.activeVideoFilter = mode;
+    localStorage.setItem('lockedin_video_filter', mode);
+
+    const filterLabels = {
+      'none': '🎭 Filter: Off',
+      'bg-blur': '🌫️ BG Blur',
+      'privacy-blur': '🫧 Soft Blur',
+      'bg-dim': '🌑 Vignette',
+      'bw': '🎬 Mono'
+    };
+    const cycleBtn = document.getElementById('btn-cycle-filter');
+    if (cycleBtn) cycleBtn.textContent = filterLabels[mode] || '🎭 Filter: Off';
+    const sel = document.getElementById('video-filter-select');
+    if (sel && sel.value !== mode) sel.value = mode;
+
+    if (!this.rawCamStream) return;
+
+    if (mode === 'none') {
+      this.stopVideoFilterLoop();
+      this.localCamStream = this.rawCamStream;
+      const rawVidTrack = this.rawCamStream.getVideoTracks()[0];
+      if (rawVidTrack) rawVidTrack.enabled = !this.isCameraPrivacyActive;
+      if (!this.isScreenSharing && rawVidTrack) {
+        this.replaceOutgoingVideoTrack(rawVidTrack);
+      }
+      this._refreshLocalCamPreview();
+      return;
+    }
+
+    if (mode === 'bg-blur') {
+      this._ensureSelfieSegmentation();
+    }
+
+    if (!this._filterCanvas) {
+      this._filterCanvas = document.createElement('canvas');
+      this._filterCanvas.width = 640;
+      this._filterCanvas.height = 480;
+      this._filterCtx = this._filterCanvas.getContext('2d');
+    }
+    if (!this._filterVideoEl) {
+      this._filterVideoEl = document.createElement('video');
+      this._filterVideoEl.playsInline = true;
+      this._filterVideoEl.muted = true;
+      this._filterVideoEl.autoplay = true;
+    }
+    if (this._filterVideoEl.srcObject !== this.rawCamStream) {
+      this._filterVideoEl.srcObject = this.rawCamStream;
+      this._filterVideoEl.play().catch(() => {});
+    }
+
+    this.stopVideoFilterLoop();
+
+    const w = this._filterCanvas.width;
+    const h = this._filterCanvas.height;
+    const ctx = this._filterCtx;
+    let segBusy = false;
+
+    const renderFrame = () => {
+      if (!this._filterVideoEl || this._filterVideoEl.readyState < 2) return;
+      ctx.save();
+      ctx.clearRect(0, 0, w, h);
+
+      if (this.activeVideoFilter === 'privacy-blur') {
+        ctx.filter = 'blur(12px)';
+        ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
+      } else if (this.activeVideoFilter === 'bw') {
+        ctx.filter = 'grayscale(100%) contrast(1.15)';
+        ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
+      } else if (this.activeVideoFilter === 'bg-dim') {
+        ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
+        const grad = ctx.createRadialGradient(w * 0.5, h * 0.45, w * 0.16, w * 0.5, h * 0.5, w * 0.62);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(1, 'rgba(8,10,16,0.92)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      } else if (this.activeVideoFilter === 'bg-blur') {
+        if (this._selfieSegmentation && !segBusy) {
+          segBusy = true;
+          this._selfieSegmentation.send({ image: this._filterVideoEl }).catch(() => {}).finally(() => { segBusy = false; });
+        }
+        if (this._latestSegMask) {
+          ctx.drawImage(this._latestSegMask, 0, 0, w, h);
+          ctx.globalCompositeOperation = 'source-in';
+          ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
+          ctx.globalCompositeOperation = 'destination-over';
+          ctx.filter = 'blur(14px)';
+          ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
+        } else {
+          ctx.filter = 'blur(10px)';
+          ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
+        }
+      }
+      ctx.restore();
+    };
+
+    renderFrame();
+    this._filterLoopId = setInterval(renderFrame, 50); // ~20fps lightweight filter loop
+
+    const captured = this._filterCanvas.captureStream(20);
+    const outStream = new MediaStream();
+    const filteredVidTrack = captured.getVideoTracks()[0];
+    if (filteredVidTrack) {
+      filteredVidTrack.enabled = !this.isCameraPrivacyActive;
+      outStream.addTrack(filteredVidTrack);
+    }
+    this.rawCamStream.getAudioTracks().forEach(t => outStream.addTrack(t));
+
+    this._filterStream = outStream;
+    this.localCamStream = outStream;
+
+    if (!this.isScreenSharing && filteredVidTrack) {
+      this.replaceOutgoingVideoTrack(filteredVidTrack);
+    }
+    this._refreshLocalCamPreview();
+  }
+
+  _refreshLocalCamPreview() {
+    const localScreenVideo = document.getElementById('local-screen-video');
+    const localCamVideo = document.getElementById('local-cam-video');
+    if (this.isDualFeedActive && this.localScreenStream) {
+      this.updateTileLayout();
+    } else if (!this.isScreenSharing && localScreenVideo) {
+      localScreenVideo.srcObject = this.localCamStream;
+      localScreenVideo.play().catch(() => {});
+    }
+    if (localCamVideo && !this.isCamSwapped) {
+      localCamVideo.srcObject = this.localCamStream;
+      localCamVideo.play().catch(() => {});
+    }
+  }
+
   setBatterySaver(enabled) {
     localStorage.setItem('lockedin_battery_saver', enabled ? 'true' : 'false');
     if (this.localCamStream) {
@@ -1192,6 +1390,7 @@ class WebRTCRoomManager {
     console.log('[WebRTC] Leaving study room:', this.roomId);
     this.releaseWakeLock();
     this.stopAdaptiveQualityMonitor();
+    this.stopVideoFilterLoop();
 
     if (this.pingInterval) {
       clearInterval(this.pingInterval);

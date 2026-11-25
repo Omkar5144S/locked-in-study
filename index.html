@@ -298,6 +298,7 @@
             <span id="local-subject-goal" class="subject-badge" style="pointer-events:auto; cursor:pointer;" title="Tap to cycle status">Deep Focus</span>
             <span id="local-listening-badge" class="listening-badge hidden">🎧 Brown Noise</span>
             <span class="points-pill">Active</span>
+            <button id="btn-cycle-filter" class="mod-btn" style="pointer-events:auto;" title="Cycle Camera Background / Privacy Filter">🎭 Filter: Off</button>
             <button id="btn-pip-swap" class="mod-btn" style="pointer-events:auto;" title="Swap PiP feeds">🔄 Swap</button>
           </div>
           <div class="hud-bottom">
@@ -447,6 +448,19 @@
             </div>
             <span id="settings-cloud-status-pill" class="pill-online" style="font-size:0.75rem;">Cloud Ready</span>
           </div>
+          <label style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);">
+            <div>
+              <strong style="font-size:0.88rem;">🎭 Camera Background Filter</strong>
+              <div style="font-size:0.75rem; color:var(--text-muted);">Hide or blur your background for peers</div>
+            </div>
+            <select id="video-filter-select" class="form-input" style="width:auto; min-width:155px; padding:6px 10px; font-size:0.84rem;">
+              <option value="none" selected>Off (Raw Cam)</option>
+              <option value="bg-blur">🌫️ Background Blur</option>
+              <option value="privacy-blur">🫧 Soft Privacy Blur</option>
+              <option value="bg-dim">🌑 Dark Vignette</option>
+              <option value="bw">🎬 Monochrome</option>
+            </select>
+          </label>
           <label style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);">
             <div>
               <strong style="font-size:0.88rem;">🎥 Video Quality</strong>
@@ -829,13 +843,13 @@
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=4.2"></script>
-  <script src="js/noise-generator.js?v=4.2"></script>
-  <script src="js/firebase-config.js?v=4.2"></script>
-  <script src="js/leaderboard.js?v=4.2"></script>
-  <script src="js/timer.js?v=4.2"></script>
-  <script src="js/webrtc-room.js?v=4.2"></script>
-  <script src="js/trigger-engine.js?v=4.2"></script>
-  <script src="js/app.js?v=4.2"></script>
+  <script src="js/soundboard-admin.js?v=4.3"></script>
+  <script src="js/noise-generator.js?v=4.3"></script>
+  <script src="js/firebase-config.js?v=4.3"></script>
+  <script src="js/leaderboard.js?v=4.3"></script>
+  <script src="js/timer.js?v=4.3"></script>
+  <script src="js/webrtc-room.js?v=4.3"></script>
+  <script src="js/trigger-engine.js?v=4.3"></script>
+  <script src="js/app.js?v=4.3"></script>
 </body>
 </html>
