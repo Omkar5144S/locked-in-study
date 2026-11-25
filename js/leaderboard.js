@@ -112,7 +112,7 @@ class LeaderboardManager {
     }
 
     if (penalty > 0) {
-      this.currentUser.totalPoints -= penalty;
+      this.currentUser.totalPoints = Math.max(0, this.currentUser.totalPoints - penalty);
       this.currentUser.pointsLost += penalty;
       this.currentUser.shameCount += 1;
       this.currentUser.topTrigger = triggerId;
@@ -122,7 +122,7 @@ class LeaderboardManager {
   }
 
   penalizeFalseReport() {
-    this.currentUser.totalPoints -= 10;
+    this.currentUser.totalPoints = Math.max(0, this.currentUser.totalPoints - 10);
     this.currentUser.pointsLost += 10;
     this.saveCurrentUser();
     this.renderHUD();

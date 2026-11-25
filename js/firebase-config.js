@@ -1,11 +1,17 @@
 /**
- * LOCKED-IN: Firebase Config & Cloud Sync with Zero-Config Fallback
- * Works 100% out-of-the-box in Local/Peer-Pair Instant Mode.
- * Upgrades seamlessly to global Firestore cloud sync when config is provided.
+ * LOCKED-IN: Firebase Config & Cloud Sync
+ * Connects every visitor directly to Cloud Firestore & Firebase Auth (my-study-project-c37cd).
  */
 
-// Default placeholder / local fallback config
-const DEFAULT_FIREBASE_CONFIG = null;
+const DEFAULT_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDFPaC9mEWz5rdjFR6WC7ANx8lwuxk41z0",
+  authDomain: "my-study-project-c37cd.firebaseapp.com",
+  projectId: "my-study-project-c37cd",
+  storageBucket: "my-study-project-c37cd.firebasestorage.app",
+  messagingSenderId: "449695129957",
+  appId: "1:449695129957:web:aba918c9ca70729104c18c",
+  measurementId: "G-YDKTBLK1FK"
+};
 
 class FirebaseManager {
   constructor() {
@@ -17,22 +23,20 @@ class FirebaseManager {
     this.eventListeners = new Map();
     this.roomListeners = new Map();
     this.broadcastChannels = new Map();
-    
-    // Attempt initialization from localStorage, window.FIREBASE_CONFIG, or inline constant
+    this.knownRooms = new Set();
+    this.lastAuthError = null;
+    this._anonSignInInFlight = null;
+    this._authReadyResolve = null;
+    this._authReadyPromise = new Promise((resolve) => {
+      this._authReadyResolve = resolve;
+    });
+
     this.init();
   }
 
   getSavedConfig() {
-    if (typeof window !== 'undefined' && window.FIREBASE_CONFIG && typeof window.FIREBASE_CONFIG === 'object') {
+    if (typeof window !== 'undefined' && window.FIREBASE_CONFIG && typeof window.FIREBASE_CONFIG === 'object' && window.FIREBASE_CONFIG.apiKey && window.FIREBASE_CONFIG.projectId) {
       return window.FIREBASE_CONFIG;
-    }
-    try {
-      const saved = localStorage.getItem('lockedin_firebase_config');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn('[Firebase] Could not parse stored config:', e);
     }
     return DEFAULT_FIREBASE_CONFIG;
   }
@@ -40,11 +44,12 @@ class FirebaseManager {
   saveConfig(configObj) {
     if (!configObj || typeof configObj !== 'object') {
       localStorage.removeItem('lockedin_firebase_config');
-      this.isConfigured = false;
-      return false;
+      window.FIREBASE_CONFIG = null;
+      return this.init();
     }
     try {
       localStorage.setItem('lockedin_firebase_config', JSON.stringify(configObj));
+      window.FIREBASE_CONFIG = configObj;
       return this.init();
     } catch (e) {
       console.error('[Firebase] Failed to save config:', e);
@@ -54,180 +59,272 @@ class FirebaseManager {
 
   init() {
     const config = this.getSavedConfig();
-    if (!config || !config.apiKey || !config.projectId) {
-      console.log('[Firebase] Running in Local Instant Mode (No cloud config detected).');
+    if (!config || !config.apiKey || !config.projectId || typeof window === 'undefined' || !window.firebase) {
+      console.error('[Firebase] Firebase SDK or config unavailable.');
       this.isConfigured = false;
-      this.setupLocalFallbackUser();
+      if (this._authReadyResolve) this._authReadyResolve(null);
       return false;
     }
 
     try {
-      if (window.firebase) {
-        if (!window.firebase.apps.length) {
-          window.firebase.initializeApp(config);
-        }
-        this.auth = window.firebase.auth();
-        this.db = window.firebase.firestore();
-        this.isConfigured = true;
+      if (!window.firebase.apps.length) {
+        window.firebase.initializeApp(config);
+      }
+      this.auth = window.firebase.auth();
+      this.db = window.firebase.firestore();
+      this.isConfigured = true;
 
-        this.auth.onAuthStateChanged(async (user) => {
-          if (user) {
-            // Check if user has verified profile in Firestore
-            let isVerified = !user.isAnonymous;
-            let callSign = localStorage.getItem('lockedin_display_name') || user.displayName || 'Scholar_' + user.uid.slice(-4);
+      // Check redirect result FIRST so anonymous auto-login never races with Google redirect
+      const redirectPromise = this.initRedirectResult().catch((err) => {
+        console.warn('[Firebase] initRedirectResult error:', err);
+        return null;
+      });
+
+      this.auth.onAuthStateChanged(async (user) => {
+        await redirectPromise;
+        const activeUser = this.auth.currentUser || user;
+
+        if (activeUser) {
+          const isGoogleUser = !activeUser.isAnonymous;
+          let callSign = localStorage.getItem('lockedin_display_name') || activeUser.displayName || 'Scholar_' + activeUser.uid.slice(-4);
+          let photoURL = isGoogleUser ? (activeUser.photoURL || '') : '';
+
+          if (isGoogleUser && this.db) {
             try {
-              const uDoc = await this.db.collection('users').doc(user.uid).get();
+              const uDoc = await this.db.collection('users').doc(activeUser.uid).get();
               if (uDoc.exists) {
                 const uData = uDoc.data();
                 if (uData.callSign) callSign = uData.callSign;
-                if (uData.isVerified !== undefined) isVerified = uData.isVerified;
+                if (uData.photoURL) photoURL = uData.photoURL;
               }
-            } catch (e) {}
-
-            this.currentUser = {
-              uid: user.uid,
-              isAnonymous: user.isAnonymous,
-              displayName: user.displayName || callSign,
-              callSign: callSign,
-              photoURL: user.photoURL || '',
-              isVerified: isVerified
-            };
-          } else {
-            this.setupLocalFallbackUser();
+            } catch (e) {
+              console.warn('[Firebase] User profile fetch warning:', e);
+            }
           }
-          this.authListeners.forEach(cb => cb(this.currentUser));
-        });
 
-        console.log('[Firebase] Successfully connected to Firebase Project:', config.projectId);
-        return true;
-      }
+          this.currentUser = {
+            uid: activeUser.uid,
+            isAnonymous: activeUser.isAnonymous,
+            displayName: activeUser.displayName || callSign,
+            callSign: callSign,
+            photoURL: photoURL,
+            isVerified: isGoogleUser
+          };
+
+          if (window.Leaderboard && window.Leaderboard.currentUser) {
+            window.Leaderboard.currentUser.uid = activeUser.uid;
+            if (isGoogleUser && activeUser.displayName && (!localStorage.getItem('lockedin_display_name') || localStorage.getItem('lockedin_display_name').startsWith('Scholar_'))) {
+              window.Leaderboard.currentUser.displayName = callSign;
+            }
+          }
+
+          this.authListeners.forEach(cb => cb(this.currentUser));
+          if (this._authReadyResolve) {
+            this._authReadyResolve(this.currentUser);
+            this._authReadyResolve = null;
+          }
+          return;
+        }
+
+        // No user signed in yet — automatically sign in anonymously so Firestore rules work seamlessly
+        if (!this._anonSignInInFlight) {
+          this._anonSignInInFlight = this.auth.signInAnonymously().catch((anonErr) => {
+            console.warn('[Firebase] Automatic anonymous sign-in unavailable:', anonErr.code || anonErr.message);
+            this.lastAuthError = anonErr;
+            this.currentUser = null;
+            this.authListeners.forEach(cb => cb(null));
+            if (this._authReadyResolve) {
+              this._authReadyResolve(null);
+              this._authReadyResolve = null;
+            }
+            return null;
+          }).finally(() => {
+            this._anonSignInInFlight = null;
+          });
+        }
+      });
+
+      console.log('[Firebase] Connected to Cloud Project:', config.projectId);
+      return true;
     } catch (err) {
-      console.warn('[Firebase] Initialization error. Falling back to local mode:', err);
+      console.error('[Firebase] Initialization error:', err);
       this.isConfigured = false;
-      this.setupLocalFallbackUser();
+      if (this._authReadyResolve) {
+        this._authReadyResolve(null);
+        this._authReadyResolve = null;
+      }
       return false;
     }
-    return false;
   }
 
-  setupLocalFallbackUser() {
-    let localUid = localStorage.getItem('lockedin_local_uid');
-    if (!localUid) {
-      localUid = 'user_' + Math.random().toString(36).substring(2, 9);
-      localStorage.setItem('lockedin_local_uid', localUid);
+  async waitForAuth(timeoutMs = 8000) {
+    if (this.auth && this.auth.currentUser && this.currentUser) {
+      return this.currentUser;
     }
-    const savedName = localStorage.getItem('lockedin_display_name') || 'Scholar_' + localUid.slice(-4);
-    this.currentUser = {
-      uid: localUid,
-      isAnonymous: true,
-      displayName: savedName,
-      callSign: savedName,
-      photoURL: '',
-      isVerified: localStorage.getItem('lockedin_is_verified') === 'true'
-    };
-    setTimeout(() => {
-      this.authListeners.forEach(cb => cb(this.currentUser));
-    }, 50);
+    const timeout = new Promise((resolve) => setTimeout(() => resolve(this.currentUser), timeoutMs));
+    return Promise.race([this._authReadyPromise, timeout]);
+  }
+
+  async ensureAuth() {
+    if (!this.isConfigured || !this.auth || !this.db) {
+      throw new Error('Firebase Cloud is not initialized.');
+    }
+    await this.waitForAuth();
+    if (this.auth.currentUser) {
+      return this.auth.currentUser.uid;
+    }
+    // Retry anonymous sign-in once if still null
+    try {
+      const cred = await this.auth.signInAnonymously();
+      if (cred && cred.user) {
+        this.currentUser = {
+          uid: cred.user.uid,
+          isAnonymous: true,
+          displayName: localStorage.getItem('lockedin_display_name') || 'Scholar_' + cred.user.uid.slice(-4),
+          callSign: localStorage.getItem('lockedin_display_name') || 'Scholar_' + cred.user.uid.slice(-4),
+          photoURL: '',
+          isVerified: false
+        };
+        return cred.user.uid;
+      }
+    } catch (err) {
+      console.error('[Firebase] ensureAuth failed:', err);
+      throw new Error('Authentication required: click "Sign in" with Google or enable Anonymous Sign-In in Firebase Console.');
+    }
+    throw new Error('Authentication failed.');
   }
 
   onAuth(callback) {
     this.authListeners.push(callback);
-    if (this.currentUser) callback(this.currentUser);
+    if (this.currentUser !== null) callback(this.currentUser);
   }
 
   async signInAnonymously() {
     if (this.isConfigured && this.auth) {
-      try {
-        const cred = await this.auth.signInAnonymously();
-        return cred.user;
-      } catch (err) {
-        console.error('[Firebase] Anonymous auth error:', err);
-      }
+      const cred = await this.auth.signInAnonymously();
+      return cred.user;
     }
-    return this.currentUser;
+    return null;
   }
 
   // Google Sign-In with Strict Privacy (Email never in public docs)
+  // Returns user object on success. Throws real Error on failure — never fakes verified state.
   async signInWithGoogle() {
-    if (this.isConfigured && this.auth && window.firebase) {
+    if (!this.isConfigured || !this.auth || !window.firebase) {
+      throw new Error('Firebase is not configured.');
+    }
+    const provider = new window.firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+
+    let cred;
+    try {
+      cred = await this.auth.signInWithPopup(provider);
+    } catch (popupErr) {
+      // Popup blocked on mobile or restricted browsers — fall back to redirect
+      if (popupErr.code === 'auth/popup-blocked' ||
+          popupErr.code === 'auth/operation-not-supported-in-this-environment') {
+        sessionStorage.setItem('lockedin_pending_redirect', '1');
+        await this.auth.signInWithRedirect(provider);
+        return null; // Page will reload; result handled in initRedirectResult()
+      }
+      throw popupErr;
+    }
+
+    return this._processGoogleCred(cred);
+  }
+
+  // Called once on page load to pick up any pending signInWithRedirect result
+  async initRedirectResult() {
+    if (!this.isConfigured || !this.auth || !window.firebase) return null;
+    try {
+      const cred = await this.auth.getRedirectResult();
+      sessionStorage.removeItem('lockedin_pending_redirect');
+      if (cred && cred.user) {
+        return await this._processGoogleCred(cred);
+      }
+    } catch (err) {
+      sessionStorage.removeItem('lockedin_pending_redirect');
+      console.warn('[Firebase] Redirect result error:', err);
+      this.lastAuthError = err.message || 'Google Sign-In redirect failed.';
+      if (typeof window !== 'undefined' && typeof window.showToast === 'function') {
+        window.showToast(`❌ ${this.lastAuthError}`, 5000);
+      }
+    }
+    return null;
+  }
+
+  // Shared post-sign-in logic: writes Firestore profile, returns currentUser
+  async _processGoogleCred(cred) {
+    const user = cred.user;
+    const uid = user.uid;
+    const savedLocalName = localStorage.getItem('lockedin_display_name');
+    const useGoogleName = !savedLocalName || savedLocalName.startsWith('Scholar_') || savedLocalName === 'FocusScholar';
+    const callSign = (useGoogleName ? (user.displayName || savedLocalName) : savedLocalName) || `Scholar_${uid.slice(-4)}`;
+    const cleanCallSign = String(callSign).trim().slice(0, 50) || 'Scholar';
+    const cleanDisplay = String(user.displayName || cleanCallSign).trim().slice(0, 50) || 'FocusScholar';
+
+    if (useGoogleName && user.displayName) {
+      localStorage.setItem('lockedin_display_name', cleanCallSign);
+    }
+
+    if (this.db) {
+      // PRIVACY: email only in private subcollection — NEVER in public doc
       try {
-        const provider = new window.firebase.auth.GoogleAuthProvider();
-        const cred = await this.auth.signInWithPopup(provider);
-        const user = cred.user;
-        const uid = user.uid;
+        await this.db.collection('users').doc(uid).collection('private').doc('info').set({
+          email: user.email || null,
+          emailVerified: !!user.emailVerified,
+          lastLogin: window.firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        console.warn('[Firebase] Private info sync failed:', e);
+      }
 
-        // PRIVACY ENFORCEMENT: Never store email in public doc.
-        // Store email strictly in private subcollection: users/{uid}/private/info
-        if (this.db) {
-          try {
-            await this.db.collection('users').doc(uid).collection('private').doc('info').set({
-              email: user.email || null,
-              emailVerified: !!user.emailVerified,
-              lastLogin: window.firebase.firestore.FieldValue.serverTimestamp()
-            }, { merge: true });
-          } catch (e) {
-            console.warn('[Firebase] Private info sync failed:', e);
-          }
-
-          // Fetch or initialize public profile WITHOUT email
-          try {
-            const userDoc = await this.db.collection('users').doc(uid).get();
-            const callSign = localStorage.getItem('lockedin_display_name') || user.displayName || `Scholar_${uid.slice(-4)}`;
-            if (!userDoc.exists) {
-              await this.db.collection('users').doc(uid).set({
-                uid: uid,
-                displayName: user.displayName || 'FocusScholar',
-                callSign: callSign,
-                photoURL: user.photoURL || '',
-                subjectGoal: localStorage.getItem('lockedin_subject_goal') || 'Deep Focus',
-                isVerified: true,
-                totalPoints: 150,
-                cleanStudyMinutes: 0,
-                shameCount: 0,
-                topTrigger: 'None',
-                level: 1,
-                xp: 0,
-                coins: 50,
-                dailyStreak: 1,
-                lastStudyDate: new Date().toISOString().slice(0, 10),
-                unlockedBadges: ['pioneer'],
-                createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-                isAnonymous: false
-              });
-            } else {
-              await this.db.collection('users').doc(uid).update({
-                isVerified: true,
-                photoURL: user.photoURL || '',
-                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
-              });
-            }
-          } catch (e) {
-            console.warn('[Firebase] Public profile sync failed:', e);
-          }
+      try {
+        const userDoc = await this.db.collection('users').doc(uid).get();
+        if (!userDoc.exists) {
+          await this.db.collection('users').doc(uid).set({
+            uid,
+            displayName: cleanDisplay,
+            callSign: cleanCallSign,
+            photoURL: (user.photoURL || '').slice(0, 500),
+            subjectGoal: (localStorage.getItem('lockedin_subject_goal') || 'Deep Focus').slice(0, 100),
+            isVerified: true,
+            totalPoints: 150,
+            cleanStudyMinutes: 0,
+            shameCount: 0,
+            topTrigger: 'None',
+            level: 1,
+            xp: 0,
+            coins: 50,
+            dailyStreak: 1,
+            lastStudyDate: new Date().toISOString().slice(0, 10),
+            unlockedBadges: ['pioneer'],
+            createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+            isAnonymous: false
+          });
+        } else {
+          await this.db.collection('users').doc(uid).update({
+            isVerified: true,
+            isAnonymous: false,
+            displayName: cleanDisplay,
+            photoURL: (user.photoURL || '').slice(0, 500),
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+          });
         }
-
-        localStorage.setItem('lockedin_is_verified', 'true');
-        this.currentUser = {
-          uid: uid,
-          isAnonymous: false,
-          displayName: user.displayName || 'FocusScholar',
-          callSign: localStorage.getItem('lockedin_display_name') || user.displayName || `Scholar_${uid.slice(-4)}`,
-          photoURL: user.photoURL || '',
-          isVerified: true
-        };
-        this.authListeners.forEach(cb => cb(this.currentUser));
-        return this.currentUser;
-      } catch (err) {
-        console.error('[Firebase] Google sign-in error:', err);
-        throw err;
+      } catch (e) {
+        console.warn('[Firebase] Public profile sync failed:', e);
       }
     }
 
-    // Local simulation fallback
-    localStorage.setItem('lockedin_is_verified', 'true');
-    this.currentUser.isVerified = true;
-    this.currentUser.isAnonymous = false;
+    this.currentUser = {
+      uid,
+      isAnonymous: false,
+      displayName: cleanDisplay,
+      callSign: cleanCallSign,
+      photoURL: user.photoURL || '',
+      isVerified: true
+    };
     this.authListeners.forEach(cb => cb(this.currentUser));
     return this.currentUser;
   }
@@ -236,45 +333,59 @@ class FirebaseManager {
     if (this.isConfigured && this.auth) {
       await this.auth.signOut();
     }
-    localStorage.removeItem('lockedin_is_verified');
-    this.setupLocalFallbackUser();
+    this.currentUser = null;
+    this.authListeners.forEach(cb => cb(null));
   }
 
   // User Profile
   async updateUserProfile(profile) {
-    if (!this.currentUser) return;
-    const uid = this.currentUser.uid;
-    const updated = {
+    if (!this.isConfigured || !this.db || !this.auth || !this.auth.currentUser) return null;
+    const uid = this.auth.currentUser.uid;
+    const isGoogleVerified = !this.auth.currentUser.isAnonymous;
+    const displayName = String(profile.displayName || this.currentUser?.displayName || 'Scholar').trim().slice(0, 50) || 'Scholar';
+    const callSign = String(profile.callSign || displayName).trim().slice(0, 50) || 'Scholar';
+    const subjectGoal = String(profile.subjectGoal || 'Deep Focus').trim().slice(0, 100);
+
+    const fields = {
       uid,
-      displayName: profile.displayName || this.currentUser.displayName || 'Scholar',
-      callSign: profile.callSign || profile.displayName || this.currentUser.callSign || 'Scholar',
-      subjectGoal: profile.subjectGoal || 'Deep Focus',
-      totalPoints: profile.totalPoints !== undefined ? profile.totalPoints : 150,
-      cleanStudyMinutes: profile.cleanStudyMinutes || 0,
-      shameCount: profile.shameCount || 0,
-      topTrigger: profile.topTrigger || 'None',
-      level: profile.level || 1,
-      xp: profile.xp || 0,
-      coins: profile.coins || 50,
-      dailyStreak: profile.dailyStreak || 1,
-      lastStudyDate: profile.lastStudyDate || new Date().toISOString().slice(0, 10),
-      unlockedBadges: profile.unlockedBadges || ['pioneer'],
-      isVerified: !!this.currentUser.isVerified,
-      updatedAt: window.firebase ? window.firebase.firestore.FieldValue.serverTimestamp() : new Date()
+      displayName,
+      callSign,
+      subjectGoal,
+      totalPoints: Math.max(0, Math.min(10000000, Number(profile.totalPoints ?? 150) || 0)),
+      cleanStudyMinutes: Math.max(0, Math.min(1000000, Number(profile.cleanStudyMinutes || 0))),
+      shameCount: Math.max(0, Math.min(100000, Number(profile.shameCount || 0))),
+      topTrigger: String(profile.topTrigger || 'None').slice(0, 100),
+      level: Math.max(0, Math.min(10000, Number(profile.level || 1))),
+      xp: Math.max(0, Math.min(100000000, Number(profile.xp || 0))),
+      coins: Math.max(0, Math.min(10000000, Number(profile.coins ?? 50))),
+      dailyStreak: Math.max(0, Math.min(10000, Number(profile.dailyStreak || 1))),
+      lastStudyDate: String(profile.lastStudyDate || new Date().toISOString().slice(0, 10)).slice(0, 50),
+      unlockedBadges: Array.isArray(profile.unlockedBadges) ? profile.unlockedBadges.slice(0, 100) : ['pioneer'],
+      isVerified: isGoogleVerified,
+      isAnonymous: this.auth.currentUser.isAnonymous,
+      updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
     };
 
-    localStorage.setItem('lockedin_profile_' + uid, JSON.stringify(updated));
-    localStorage.setItem('lockedin_display_name', updated.callSign);
-    localStorage.setItem('lockedin_subject_goal', updated.subjectGoal);
+    localStorage.setItem('lockedin_profile_' + uid, JSON.stringify(fields));
+    localStorage.setItem('lockedin_display_name', callSign);
+    localStorage.setItem('lockedin_subject_goal', subjectGoal);
 
-    if (this.isConfigured && this.db) {
-      try {
-        await this.db.collection('users').doc(uid).set(updated, { merge: true });
-      } catch (err) {
-        console.warn('[Firebase] Cloud profile update failed:', err);
+    try {
+      const userRef = this.db.collection('users').doc(uid);
+      const snap = await userRef.get();
+      if (!snap.exists) {
+        await userRef.set({
+          ...fields,
+          photoURL: (this.auth.currentUser.photoURL || '').slice(0, 500),
+          createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        });
+      } else {
+        await userRef.update(fields);
       }
+    } catch (err) {
+      console.warn('[Firebase] Cloud profile update failed:', err);
     }
-    return updated;
+    return fields;
   }
 
   async getUserProfile(uid) {
@@ -295,349 +406,341 @@ class FirebaseManager {
   // ROOM CREATION & LIVE LOBBY REFRESH
   // =========================================================
 
-  // Create room immediately with Firestore confirmation
   async createRoom(roomData) {
-    const roomId = String(roomData.roomId).trim().toUpperCase();
-    const title = roomData.title || roomId;
-    const sector = roomData.sector || 'stem';
-    const hostUid = this.currentUser ? this.currentUser.uid : 'anon_host';
+    const hostUid = await this.ensureAuth();
+    const roomId = String(roomData.roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24) || 'STUDY-101';
+    const title = String(roomData.title || roomId).trim().slice(0, 100) || roomId;
+    const sector = String(roomData.sector || 'stem').trim().slice(0, 50) || 'stem';
+    const durationSec = Math.max(60, Math.min(86400, (Number(roomData.focusMinutes) || 25) * 60));
 
-    const payload = {
-      roomId: roomId,
-      title: title,
-      name: title,
-      sector: sector,
-      hostUid: hostUid,
-      hostId: hostUid,
-      activeCount: 1,
-      participantCount: 1,
-      timerState: {
-        mode: 'POMODORO',
-        duration: (roomData.focusMinutes || 25) * 60,
-        startedAt: window.firebase ? window.firebase.firestore.FieldValue.serverTimestamp() : null,
-        isPaused: false
-      },
-      createdAt: window.firebase ? window.firebase.firestore.FieldValue.serverTimestamp() : new Date(),
-      lastPing: window.firebase ? window.firebase.firestore.FieldValue.serverTimestamp() : new Date(),
-      updatedAt: window.firebase ? window.firebase.firestore.FieldValue.serverTimestamp() : new Date()
+    const timerState = {
+      mode: 'POMODORO',
+      duration: durationSec,
+      startedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+      isPaused: false
     };
 
-    if (this.isConfigured && this.db) {
-      const roomRef = this.db.collection('rooms').doc(roomId);
-      await roomRef.set(payload, { merge: true });
+    const roomRef = this.db.collection('rooms').doc(roomId);
+    const existing = await roomRef.get();
+
+    if (!existing.exists) {
+      const payload = {
+        roomId,
+        title,
+        name: title,
+        sector,
+        hostUid,
+        hostId: hostUid,
+        activeCount: 1,
+        participantCount: 1,
+        timerState,
+        createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+        lastPing: window.firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+      };
+      await roomRef.set(payload);
+      this.knownRooms.add(roomId);
       console.log('[Firebase] Room created in Firestore:', roomId);
       return payload;
+    } else {
+      const prevCount = existing.data()?.activeCount || 0;
+      const updatePayload = {
+        title,
+        name: title,
+        sector,
+        timerState,
+        activeCount: Math.min(100, Math.max(1, prevCount)),
+        participantCount: Math.min(100, Math.max(1, prevCount)),
+        lastPing: window.firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+      };
+      await roomRef.update(updatePayload);
+      this.knownRooms.add(roomId);
+      console.log('[Firebase] Existing room refreshed in Firestore:', roomId);
+      return { roomId, ...updatePayload };
     }
-
-    // Local storage fallback for instant demo/multi-tab testing
-    try {
-      const localRooms = JSON.parse(localStorage.getItem('lockedin_active_rooms') || '[]');
-      const idx = localRooms.findIndex(r => r.roomId === roomId || r.id === roomId);
-      const entry = { ...payload, id: roomId };
-      if (idx >= 0) localRooms[idx] = entry;
-      else localRooms.unshift(entry);
-      localStorage.setItem('lockedin_active_rooms', JSON.stringify(localRooms));
-      this.getChannel('global_lobby').postMessage({ type: 'ROOM_CREATED', room: entry });
-    } catch (e) {}
-
-    return payload;
   }
 
-  // Heartbeat ping room every 15s while active
+  // Heartbeat ping room every 15s while active; creates room doc if joined directly by code/link
   async pingRoom(roomId, activeCount = 1) {
     if (!roomId) return;
-    const cleanRoom = String(roomId).trim().toUpperCase();
-    if (this.isConfigured && this.db) {
-      try {
-        await this.db.collection('rooms').doc(cleanRoom).set({
-          lastPing: window.firebase.firestore.FieldValue.serverTimestamp(),
-          updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-          activeCount: Math.max(1, activeCount),
-          participantCount: Math.max(1, activeCount)
-        }, { merge: true });
-      } catch (e) {
-        console.warn('[Firebase] pingRoom error:', e);
-      }
-    } else {
-      // Local ping
-      try {
-        const localRooms = JSON.parse(localStorage.getItem('lockedin_active_rooms') || '[]');
-        const idx = localRooms.findIndex(r => r.roomId === cleanRoom || r.id === cleanRoom);
-        if (idx >= 0) {
-          localRooms[idx].lastPing = Date.now();
-          localRooms[idx].activeCount = activeCount;
-          localStorage.setItem('lockedin_active_rooms', JSON.stringify(localRooms));
-        }
-      } catch (e) {}
-    }
-  }
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    if (!cleanRoom) return;
 
-  // Listen to active rooms (filtered lastPing < 60s)
-  listenToActiveRooms(callback) {
-    if (this.isConfigured && this.db) {
-      return this.db.collection('rooms').onSnapshot((snapshot) => {
-        const rooms = [];
-        const now = Date.now();
-        snapshot.forEach(doc => {
-          const data = doc.data();
-          const rId = data.roomId || doc.id;
-          const lastPingMs = data.lastPing?.toMillis ? data.lastPing.toMillis() : (data.updatedAt?.toMillis ? data.updatedAt.toMillis() : now);
-          // Keep rooms pinged within last 60 seconds (or standard Main Hall)
-          if (now - lastPingMs <= 60000 || rId === 'MAIN-STUDY-HALL') {
-            rooms.push({ ...data, roomId: rId, id: rId });
-          }
-        });
-        callback(rooms);
-      }, (err) => {
-        console.warn('[Firebase] listenToActiveRooms error:', err);
-      });
-    }
-
-    // Local / BroadcastChannel listener fallback
-    const ch = this.getChannel('global_lobby');
-    const updateLocal = () => {
-      const rooms = this.getLocalActiveRooms();
-      callback(rooms);
-    };
-    ch.onmessage = () => updateLocal();
-    updateLocal();
-    return () => {};
-  }
-
-  getLocalActiveRooms() {
     try {
-      const localRooms = JSON.parse(localStorage.getItem('lockedin_active_rooms') || '[]');
-      const now = Date.now();
-      return localRooms.filter(r => {
-        const ping = (typeof r.lastPing === 'number') ? r.lastPing : now;
-        return (now - ping <= 60000) || r.id === 'MAIN-STUDY-HALL';
+      const uid = await this.ensureAuth();
+      const clampedCount = Math.min(100, Math.max(0, Number(activeCount) || 0));
+      const roomRef = this.db.collection('rooms').doc(cleanRoom);
+
+      if (!this.knownRooms.has(cleanRoom)) {
+        const snap = await roomRef.get();
+        if (!snap.exists) {
+          const defaultTitle = cleanRoom === 'MAIN-STUDY-HALL'
+            ? '⚡ Main Study Hall (24/7 Community)'
+            : `Study Lounge (${cleanRoom})`;
+          await roomRef.set({
+            roomId: cleanRoom,
+            title: defaultTitle,
+            name: defaultTitle,
+            sector: cleanRoom === 'MAIN-STUDY-HALL' ? 'all' : 'stem',
+            hostUid: uid,
+            hostId: uid,
+            activeCount: Math.max(1, clampedCount),
+            participantCount: Math.max(1, clampedCount),
+            timerState: {
+              mode: 'POMODORO',
+              duration: 1500,
+              startedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+              isPaused: false
+            },
+            createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+            lastPing: window.firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+          });
+          this.knownRooms.add(cleanRoom);
+          return;
+        }
+        this.knownRooms.add(cleanRoom);
+      }
+
+      await roomRef.update({
+        lastPing: window.firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+        activeCount: clampedCount,
+        participantCount: clampedCount
       });
     } catch (e) {
-      return [];
+      if (e && e.code === 'not-found') {
+        this.knownRooms.delete(cleanRoom);
+      }
+      console.warn('[Firebase] pingRoom error:', e);
     }
   }
 
-  // Instant getDocs fetch for manual refresh button with spinning animation
-  async getActiveRoomsOnce() {
-    if (this.isConfigured && this.db) {
-      const snap = await this.db.collection('rooms').get();
-      const rooms = [];
-      const now = Date.now();
-      snap.forEach(doc => {
-        const data = doc.data();
-        const rId = data.roomId || doc.id;
-        const lastPingMs = data.lastPing?.toMillis ? data.lastPing.toMillis() : (data.updatedAt?.toMillis ? data.updatedAt.toMillis() : now);
-        if (now - lastPingMs <= 60000 || rId === 'MAIN-STUDY-HALL') {
-          rooms.push({ ...data, roomId: rId, id: rId });
-        }
+  _filterActiveRooms(snapshot) {
+    const rooms = [];
+    const now = Date.now();
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const rId = data.roomId || doc.id;
+      const lastPingMs = data.lastPing?.toMillis
+        ? data.lastPing.toMillis()
+        : (data.updatedAt?.toMillis ? data.updatedAt.toMillis() : now);
+      const count = data.activeCount !== undefined ? data.activeCount : 1;
+      const isFresh = Math.abs(now - lastPingMs) <= 180000; // 3-min window tolerates mobile clock skew
+      if (rId === 'MAIN-STUDY-HALL' || (isFresh && count > 0)) {
+        rooms.push({ ...data, roomId: rId, id: rId, _lastPingMs: lastPingMs });
+      }
+    });
+    rooms.sort((a, b) => {
+      if (a.roomId === 'MAIN-STUDY-HALL') return -1;
+      if (b.roomId === 'MAIN-STUDY-HALL') return 1;
+      return (b._lastPingMs || 0) - (a._lastPingMs || 0);
+    });
+    return rooms;
+  }
+
+  // Listen to active rooms — automatically waits for Firebase Auth before subscribing,
+  // and re-subscribes if user signs in later.
+  listenToActiveRooms(callback) {
+    let innerUnsub = null;
+    let cancelled = false;
+
+    const attach = () => {
+      if (cancelled || innerUnsub || !this.isConfigured || !this.db || !this.auth?.currentUser) return;
+      innerUnsub = this.db.collection('rooms').onSnapshot((snapshot) => {
+        callback(this._filterActiveRooms(snapshot));
+      }, (err) => {
+        console.warn('[Firebase] listenToActiveRooms error:', err);
+        innerUnsub = null;
       });
-      return rooms;
-    }
-    return this.getLocalActiveRooms();
+    };
+
+    this.waitForAuth().then(() => attach());
+    this.onAuth((user) => {
+      if (user) attach();
+    });
+
+    return () => {
+      cancelled = true;
+      if (innerUnsub) {
+        innerUnsub();
+        innerUnsub = null;
+      }
+    };
+  }
+
+  // Instant get() fetch for manual refresh button
+  async getActiveRoomsOnce() {
+    await this.ensureAuth();
+    const snap = await this.db.collection('rooms').get();
+    return this._filterActiveRooms(snap);
   }
 
   // =========================================================
   // PEER-PAIR SIGNALING & PRESENCE ARCHITECTURE
   // =========================================================
 
-  // Participant Presence
   async setParticipantPresence(roomId, peerId, data) {
     if (!roomId || !peerId) return;
-    const cleanRoom = String(roomId).trim().toUpperCase();
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    const uid = await this.ensureAuth();
+    const callSign = String(data.callSign || data.displayName || 'Scholar').trim().slice(0, 50) || 'Scholar';
+    const isGoogleVerified = !!(this.auth.currentUser && !this.auth.currentUser.isAnonymous);
+
     const payload = {
-      peerId: peerId,
-      callSign: data.callSign || data.displayName || 'Scholar',
-      displayName: data.callSign || data.displayName || 'Scholar',
-      cameraMode: data.cameraMode || 'dual',
-      isVerified: !!data.isVerified,
-      userId: this.currentUser ? this.currentUser.uid : peerId,
+      peerId: String(peerId).slice(0, 100),
+      callSign,
+      displayName: callSign,
+      cameraMode: String(data.cameraMode || 'dual').slice(0, 50),
+      isVerified: isGoogleVerified,
+      userId: uid,
       status: 'LOCKED_IN',
       isHandRaised: false,
       timerRemaining: 1500,
-      joinedAt: window.firebase ? window.firebase.firestore.FieldValue.serverTimestamp() : new Date(),
-      lastSeen: window.firebase ? window.firebase.firestore.FieldValue.serverTimestamp() : new Date()
+      joinedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+      lastSeen: window.firebase.firestore.FieldValue.serverTimestamp()
     };
 
-    if (this.isConfigured && this.db) {
-      try {
-        await this.db.collection('rooms').doc(cleanRoom).collection('participants').doc(peerId).set(payload, { merge: true });
-      } catch (e) {
-        console.warn('[Firebase] setParticipantPresence fail:', e);
-      }
-    } else {
-      // Local BroadcastChannel presence
-      this.getChannel('room_' + cleanRoom).postMessage({
-        type: 'PRESENCE_JOIN',
-        participant: payload
+    await this.db.collection('rooms').doc(cleanRoom).collection('participants').doc(peerId).set(payload);
+  }
+
+  async updateParticipantHeartbeat(roomId, peerId) {
+    if (!roomId || !peerId || !this.isConfigured || !this.db || !this.auth?.currentUser) return;
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    try {
+      await this.db.collection('rooms').doc(cleanRoom).collection('participants').doc(peerId).update({
+        lastSeen: window.firebase.firestore.FieldValue.serverTimestamp()
       });
+    } catch (e) {
+      console.warn('[Firebase] participant heartbeat error:', e);
     }
   }
 
   async removeParticipantPresence(roomId, peerId) {
-    if (!roomId || !peerId) return;
-    const cleanRoom = String(roomId).trim().toUpperCase();
-    if (this.isConfigured && this.db) {
-      try {
-        await this.db.collection('rooms').doc(cleanRoom).collection('participants').doc(peerId).delete();
-      } catch (e) {}
-    } else {
-      this.getChannel('room_' + cleanRoom).postMessage({
-        type: 'PRESENCE_LEAVE',
-        peerId: peerId
-      });
+    if (!roomId || !peerId || !this.isConfigured || !this.db) return;
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    try {
+      await this.db.collection('rooms').doc(cleanRoom).collection('participants').doc(peerId).delete();
+    } catch (e) {
+      console.warn('[Firebase] removeParticipantPresence error:', e);
     }
   }
 
   listenToParticipants(roomId, callback) {
     if (!roomId) return () => {};
-    const cleanRoom = String(roomId).trim().toUpperCase();
-    if (this.isConfigured && this.db) {
-      return this.db.collection('rooms').doc(cleanRoom).collection('participants').onSnapshot((snapshot) => {
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    let innerUnsub = null;
+    let cancelled = false;
+
+    const attach = () => {
+      if (cancelled || innerUnsub || !this.isConfigured || !this.db || !this.auth?.currentUser) return;
+      innerUnsub = this.db.collection('rooms').doc(cleanRoom).collection('participants').onSnapshot((snapshot) => {
         const list = [];
-        snapshot.forEach(doc => list.push(doc.data()));
+        const now = Date.now();
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          const lastSeenMs = data.lastSeen?.toMillis
+            ? data.lastSeen.toMillis()
+            : (data.joinedAt?.toMillis ? data.joinedAt.toMillis() : now);
+          // Filter out crashed/stale ghost peers older than 2 minutes
+          if (Math.abs(now - lastSeenMs) <= 120000) {
+            list.push(data);
+          }
+        });
         callback(list);
       }, (err) => {
         console.warn('[Firebase] listenToParticipants error:', err);
       });
-    }
+    };
 
-    // Local presence tracker
-    const participants = new Map();
-    const ch = this.getChannel('room_' + cleanRoom);
-    const handler = (e) => {
-      const msg = e.data;
-      if (!msg) return;
-      if (msg.type === 'PRESENCE_JOIN' && msg.participant) {
-        participants.set(msg.participant.peerId, msg.participant);
-        callback(Array.from(participants.values()));
-      } else if (msg.type === 'PRESENCE_LEAVE' && msg.peerId) {
-        participants.delete(msg.peerId);
-        callback(Array.from(participants.values()));
+    this.waitForAuth().then(() => attach());
+
+    return () => {
+      cancelled = true;
+      if (innerUnsub) {
+        innerUnsub();
+        innerUnsub = null;
       }
     };
-    ch.addEventListener('message', handler);
-    return () => ch.removeEventListener('message', handler);
   }
 
   // Peer-Pair Connections: rooms/{roomId}/connections/{smallerId}_{largerId}
   async writeConnectionOffer(roomId, connectionId, offerData) {
-    const cleanRoom = String(roomId).trim().toUpperCase();
-    if (this.isConfigured && this.db) {
-      await this.db.collection('rooms').doc(cleanRoom).collection('connections').doc(connectionId).set({
-        ...offerData,
-        createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-    } else {
-      this.getChannel('conn_' + cleanRoom + '_' + connectionId).postMessage({
-        type: 'OFFER',
-        data: offerData
-      });
-    }
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    await this.ensureAuth();
+    await this.db.collection('rooms').doc(cleanRoom).collection('connections').doc(connectionId).set({
+      ...offerData,
+      createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
   }
 
   async writeConnectionAnswer(roomId, connectionId, answerData) {
-    const cleanRoom = String(roomId).trim().toUpperCase();
-    if (this.isConfigured && this.db) {
-      await this.db.collection('rooms').doc(cleanRoom).collection('connections').doc(connectionId).set({
-        ...answerData,
-        answeredAt: window.firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-    } else {
-      this.getChannel('conn_' + cleanRoom + '_' + connectionId).postMessage({
-        type: 'ANSWER',
-        data: answerData
-      });
-    }
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    await this.ensureAuth();
+    await this.db.collection('rooms').doc(cleanRoom).collection('connections').doc(connectionId).update({
+      ...answerData,
+      answeredAt: window.firebase.firestore.FieldValue.serverTimestamp()
+    });
   }
 
   listenToConnection(roomId, connectionId, callback) {
-    const cleanRoom = String(roomId).trim().toUpperCase();
-    if (this.isConfigured && this.db) {
-      return this.db.collection('rooms').doc(cleanRoom).collection('connections').doc(connectionId).onSnapshot((doc) => {
-        if (doc.exists) callback(doc.data());
-      }, (err) => {
-        console.warn('[Firebase] listenToConnection error:', err);
-      });
-    }
-
-    const ch = this.getChannel('conn_' + cleanRoom + '_' + connectionId);
-    const handler = (e) => {
-      const msg = e.data;
-      if (msg && msg.data) callback(msg.data);
-    };
-    ch.addEventListener('message', handler);
-    return () => ch.removeEventListener('message', handler);
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    if (!this.isConfigured || !this.db) return () => {};
+    return this.db.collection('rooms').doc(cleanRoom).collection('connections').doc(connectionId).onSnapshot((doc) => {
+      if (doc.exists) callback(doc.data());
+    }, (err) => {
+      console.warn('[Firebase] listenToConnection error:', err);
+    });
   }
 
   async addIceCandidate(roomId, connectionId, type, candidate) {
-    if (!roomId || !connectionId || !candidate) return;
-    const cleanRoom = String(roomId).trim().toUpperCase();
+    if (!roomId || !connectionId || !candidate || !this.isConfigured || !this.db) return;
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
     const candJson = candidate.toJSON ? candidate.toJSON() : JSON.parse(JSON.stringify(candidate));
 
-    if (this.isConfigured && this.db) {
-      try {
-        const sub = (type === 'caller') ? 'callerCandidates' : 'calleeCandidates';
-        await this.db.collection('rooms').doc(cleanRoom).collection('connections').doc(connectionId)
-          .collection(sub).add({
-            candidate: candJson,
-            createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-          });
-      } catch (e) {
-        console.warn('[Firebase] addIceCandidate error:', e);
-      }
-    } else {
-      this.getChannel('cand_' + cleanRoom + '_' + connectionId).postMessage({
-        type: type,
-        candidate: candJson
-      });
+    try {
+      const sub = (type === 'caller') ? 'callerCandidates' : 'calleeCandidates';
+      await this.db.collection('rooms').doc(cleanRoom).collection('connections').doc(connectionId)
+        .collection(sub).add({
+          candidate: candJson,
+          createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (e) {
+      console.warn('[Firebase] addIceCandidate error:', e);
     }
   }
 
   listenToIceCandidates(roomId, connectionId, type, callback) {
-    const cleanRoom = String(roomId).trim().toUpperCase();
-    if (this.isConfigured && this.db) {
-      const sub = (type === 'caller') ? 'callerCandidates' : 'calleeCandidates';
-      return this.db.collection('rooms').doc(cleanRoom).collection('connections').doc(connectionId)
-        .collection(sub).onSnapshot((snapshot) => {
-          snapshot.docChanges().forEach((change) => {
-            if (change.type === 'added') {
-              const data = change.doc.data();
-              if (data && data.candidate) callback(data.candidate);
-            }
-          });
-        }, (err) => {
-          console.warn('[Firebase] listenToIceCandidates error:', err);
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    if (!this.isConfigured || !this.db) return () => {};
+    const sub = (type === 'caller') ? 'callerCandidates' : 'calleeCandidates';
+    return this.db.collection('rooms').doc(cleanRoom).collection('connections').doc(connectionId)
+      .collection(sub).onSnapshot((snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'added') {
+            const data = change.doc.data();
+            if (data && data.candidate) callback(data.candidate);
+          }
         });
-    }
-
-    const ch = this.getChannel('cand_' + cleanRoom + '_' + connectionId);
-    const handler = (e) => {
-      const msg = e.data;
-      if (msg && msg.type === type && msg.candidate) {
-        callback(msg.candidate);
-      }
-    };
-    ch.addEventListener('message', handler);
-    return () => ch.removeEventListener('message', handler);
+      }, (err) => {
+        console.warn('[Firebase] listenToIceCandidates error:', err);
+      });
   }
 
   async cleanupConnection(roomId, connectionId) {
-    if (!roomId || !connectionId) return;
-    const cleanRoom = String(roomId).trim().toUpperCase();
-    if (this.isConfigured && this.db) {
-      try {
-        await this.db.collection('rooms').doc(cleanRoom).collection('connections').doc(connectionId).delete();
-      } catch (e) {}
-    }
+    if (!roomId || !connectionId || !this.isConfigured || !this.db) return;
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    try {
+      await this.db.collection('rooms').doc(cleanRoom).collection('connections').doc(connectionId).delete();
+    } catch (e) {}
   }
 
-  // BroadcastChannel helper for zero-config multi-tab local signaling
   getChannel(name) {
     if (!this.broadcastChannels.has(name)) {
       if (typeof BroadcastChannel !== 'undefined') {
         this.broadcastChannels.set(name, new BroadcastChannel('lockedin_' + name));
       } else {
-        // Mock channel if BroadcastChannel is unsupported
         this.broadcastChannels.set(name, {
           postMessage: () => {},
           addEventListener: () => {},
@@ -651,31 +754,43 @@ class FirebaseManager {
 
   // Event Broadcasting (Triggers, Peer Callouts, Shame, Timer sync)
   async broadcastEvent(roomId, event) {
-    if (!roomId || !event) return;
-    const cleanRoom = String(roomId).trim().toUpperCase();
-    if (this.isConfigured && this.db) {
-      try {
-        await this.db.collection('rooms').doc(cleanRoom).collection('events').add({
-          ...event,
-          timestamp: window.firebase.firestore.FieldValue.serverTimestamp()
-        });
-      } catch (err) {
-        console.warn('[Firebase] Broadcast event cloud fail:', err);
-      }
-    } else {
-      this.getChannel('events_' + cleanRoom).postMessage(event);
+    if (!roomId || !event || !this.isConfigured || !this.db) return;
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    try {
+      const uid = await this.ensureAuth();
+      const { type, senderName, message, targetUserId, ...rest } = event;
+      await this.db.collection('rooms').doc(cleanRoom).collection('events').add({
+        type: String(type || 'EVENT').slice(0, 50),
+        senderId: uid,
+        senderName: String(senderName || localStorage.getItem('lockedin_display_name') || 'Scholar').trim().slice(0, 50) || 'Scholar',
+        message: message ? String(message).slice(0, 500) : '',
+        payload: rest,
+        ...(targetUserId ? { targetUserId: String(targetUserId).slice(0, 128) } : {}),
+        timestamp: window.firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (err) {
+      console.warn('[Firebase] Broadcast event cloud fail:', err);
     }
   }
 
   listenToRoomEvents(roomId, onEvent) {
     if (!roomId) return () => {};
-    const cleanRoom = String(roomId).trim().toUpperCase();
-    if (this.isConfigured && this.db) {
-      const now = new Date();
-      return this.db.collection('rooms').doc(cleanRoom)
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    let innerUnsub = null;
+    let cancelled = false;
+    let initialLoad = true;
+
+    const attach = () => {
+      if (cancelled || innerUnsub || !this.isConfigured || !this.db || !this.auth?.currentUser) return;
+      innerUnsub = this.db.collection('rooms').doc(cleanRoom)
         .collection('events')
-        .where('timestamp', '>=', now)
+        .orderBy('timestamp', 'desc')
+        .limit(20)
         .onSnapshot((snapshot) => {
+          if (initialLoad) {
+            initialLoad = false;
+            return;
+          }
           snapshot.docChanges().forEach(change => {
             if (change.type === 'added') {
               onEvent(change.doc.data());
@@ -684,12 +799,17 @@ class FirebaseManager {
         }, (err) => {
           console.warn('[Firebase] Event stream listener error:', err);
         });
-    }
+    };
 
-    const ch = this.getChannel('events_' + cleanRoom);
-    const handler = (e) => onEvent(e.data);
-    ch.addEventListener('message', handler);
-    return () => ch.removeEventListener('message', handler);
+    this.waitForAuth().then(() => attach());
+
+    return () => {
+      cancelled = true;
+      if (innerUnsub) {
+        innerUnsub();
+        innerUnsub = null;
+      }
+    };
   }
 
   // Public Shame Log
@@ -703,14 +823,17 @@ class FirebaseManager {
       });
       if (history.length > 100) history.pop();
       localStorage.setItem('lockedin_shame_history', JSON.stringify(history));
-    } catch (e) {
-      console.warn('[Storage] Local shame history record error:', e);
-    }
+    } catch (e) {}
 
-    if (this.isConfigured && this.db) {
+    if (this.isConfigured && this.db && this.auth?.currentUser) {
       try {
         await this.db.collection('wall_of_shame').add({
-          ...shameRecord,
+          userId: this.auth.currentUser.uid,
+          displayName: String(shameRecord.displayName || 'Scholar').slice(0, 50),
+          triggerId: String(shameRecord.triggerId || 'DISTRACTION').slice(0, 50),
+          triggerName: String(shameRecord.triggerName || 'Focus Break').slice(0, 100),
+          pointsDeducted: Math.max(0, Number(shameRecord.pointsDeducted) || 0),
+          roomId: String(shameRecord.roomId || '').slice(0, 100),
           timestamp: window.firebase.firestore.FieldValue.serverTimestamp()
         });
       } catch (err) {
@@ -723,45 +846,33 @@ class FirebaseManager {
   // Peer Doubt Board (Community Questions & Answers)
   // =========================================================
   async createDoubt({ subject, questionText, imageUrl = '', bountyCoins = 20 }) {
-    const authorUid = this.currentUser ? this.currentUser.uid : 'anon_' + Date.now();
-    const authorCallSign = (this.currentUser && this.currentUser.callSign) || localStorage.getItem('lockedin_display_name') || 'Scholar';
+    const authorUid = await this.ensureAuth();
+    const authorCallSign = String((this.currentUser && this.currentUser.callSign) || localStorage.getItem('lockedin_display_name') || 'Scholar').trim().slice(0, 50) || 'Scholar';
     const doubtId = 'd_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const doubtData = {
       doubtId,
       authorUid,
       authorCallSign,
-      subject: subject || 'General Study',
-      questionText: questionText.trim(),
-      imageUrl: imageUrl || '',
-      bountyCoins: bountyCoins || 20,
+      subject: String(subject || 'General Study').trim().slice(0, 100) || 'General Study',
+      questionText: String(questionText || '').trim().slice(0, 5000),
+      imageUrl: String(imageUrl || '').slice(0, 500),
+      bountyCoins: Math.max(0, Math.min(100000, Number(bountyCoins) || 20)),
       status: 'OPEN',
-      createdAt: (this.isConfigured && window.firebase) ? window.firebase.firestore.FieldValue.serverTimestamp() : Date.now(),
-      updatedAt: (this.isConfigured && window.firebase) ? window.firebase.firestore.FieldValue.serverTimestamp() : Date.now()
+      createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
     };
 
-    if (this.isConfigured && this.db) {
-      try {
-        await this.db.collection('doubts').doc(doubtId).set(doubtData);
-        return doubtId;
-      } catch (err) {
-        console.warn('[Firebase] Create doubt error:', err);
-      }
-    }
-
-    // Local fallback
-    try {
-      const doubts = JSON.parse(localStorage.getItem('lockedin_local_doubts') || '[]');
-      doubts.unshift({ ...doubtData, createdAt: Date.now(), updatedAt: Date.now() });
-      localStorage.setItem('lockedin_local_doubts', JSON.stringify(doubts.slice(0, 50)));
-      const ch = this.getChannel('doubts_global');
-      ch.postMessage({ type: 'DOUBT_CREATED', doubt: doubtData });
-    } catch (e) {}
+    await this.db.collection('doubts').doc(doubtId).set(doubtData);
     return doubtId;
   }
 
   listenToDoubts(callback) {
-    if (this.isConfigured && this.db) {
-      return this.db.collection('doubts')
+    let innerUnsub = null;
+    let cancelled = false;
+
+    const attach = () => {
+      if (cancelled || innerUnsub || !this.isConfigured || !this.db || !this.auth?.currentUser) return;
+      innerUnsub = this.db.collection('doubts')
         .orderBy('createdAt', 'desc')
         .limit(30)
         .onSnapshot((snapshot) => {
@@ -770,131 +881,67 @@ class FirebaseManager {
           callback(list);
         }, (err) => {
           console.warn('[Firebase] Doubts listener error:', err);
+          innerUnsub = null;
         });
-    }
+    };
 
-    // Local fallback
-    const loadLocal = () => {
-      try {
-        const doubts = JSON.parse(localStorage.getItem('lockedin_local_doubts') || '[]');
-        callback(doubts);
-      } catch (e) {
-        callback([]);
+    this.waitForAuth().then(() => attach());
+    this.onAuth((user) => {
+      if (user) attach();
+    });
+
+    return () => {
+      cancelled = true;
+      if (innerUnsub) {
+        innerUnsub();
+        innerUnsub = null;
       }
     };
-    loadLocal();
-    const ch = this.getChannel('doubts_global');
-    const handler = () => loadLocal();
-    ch.addEventListener('message', handler);
-    return () => ch.removeEventListener('message', handler);
   }
 
   async addDoubtAnswer(doubtId, answerText) {
-    const authorUid = this.currentUser ? this.currentUser.uid : 'anon_' + Date.now();
-    const authorCallSign = (this.currentUser && this.currentUser.callSign) || localStorage.getItem('lockedin_display_name') || 'Scholar';
+    const authorUid = await this.ensureAuth();
+    const authorCallSign = String((this.currentUser && this.currentUser.callSign) || localStorage.getItem('lockedin_display_name') || 'Scholar').trim().slice(0, 50) || 'Scholar';
     const answerId = 'a_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const answerData = {
       answerId,
       doubtId,
       authorUid,
       authorCallSign,
-      answerText: answerText.trim(),
-      createdAt: (this.isConfigured && window.firebase) ? window.firebase.firestore.FieldValue.serverTimestamp() : Date.now(),
+      answerText: String(answerText || '').trim().slice(0, 5000),
+      createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
       isAccepted: false
     };
 
-    if (this.isConfigured && this.db) {
-      try {
-        await this.db.collection('doubts').doc(doubtId).collection('answers').doc(answerId).set(answerData);
-        return answerId;
-      } catch (err) {
-        console.warn('[Firebase] Add answer error:', err);
-      }
-    }
-
-    // Local fallback
-    try {
-      const key = `lockedin_doubt_answers_${doubtId}`;
-      const answers = JSON.parse(localStorage.getItem(key) || '[]');
-      answers.push({ ...answerData, createdAt: Date.now() });
-      localStorage.setItem(key, JSON.stringify(answers));
-      const ch = this.getChannel('doubts_global');
-      ch.postMessage({ type: 'ANSWER_ADDED', doubtId, answer: answerData });
-    } catch (e) {}
+    await this.db.collection('doubts').doc(doubtId).collection('answers').doc(answerId).set(answerData);
     return answerId;
   }
 
   listenToDoubtAnswers(doubtId, callback) {
-    if (this.isConfigured && this.db) {
-      return this.db.collection('doubts').doc(doubtId).collection('answers')
-        .orderBy('createdAt', 'asc')
-        .onSnapshot((snapshot) => {
-          const list = [];
-          snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-          callback(list);
-        }, (err) => {
-          console.warn('[Firebase] Answers listener error:', err);
-        });
-    }
-
-    // Local fallback
-    const key = `lockedin_doubt_answers_${doubtId}`;
-    const loadLocal = () => {
-      try {
-        const answers = JSON.parse(localStorage.getItem(key) || '[]');
-        callback(answers);
-      } catch (e) {
-        callback([]);
-      }
-    };
-    loadLocal();
-    const ch = this.getChannel('doubts_global');
-    const handler = (e) => {
-      if (e.data && e.data.doubtId === doubtId) loadLocal();
-    };
-    ch.addEventListener('message', handler);
-    return () => ch.removeEventListener('message', handler);
+    if (!this.isConfigured || !this.db) return () => {};
+    return this.db.collection('doubts').doc(doubtId).collection('answers')
+      .orderBy('createdAt', 'asc')
+      .onSnapshot((snapshot) => {
+        const list = [];
+        snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        callback(list);
+      }, (err) => {
+        console.warn('[Firebase] Answers listener error:', err);
+      });
   }
 
   async acceptDoubtAnswer(doubtId, answerId, solverUid) {
-    if (this.isConfigured && this.db) {
-      try {
-        await this.db.collection('doubts').doc(doubtId).update({
-          status: 'RESOLVED',
-          acceptedAnswerId: answerId,
-          solverUid: solverUid,
-          updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
-        });
-        await this.db.collection('doubts').doc(doubtId).collection('answers').doc(answerId).update({
-          isAccepted: true,
-          updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
-        });
-        return true;
-      } catch (err) {
-        console.warn('[Firebase] Accept answer error:', err);
-      }
-    }
-
-    // Local fallback
-    try {
-      const doubts = JSON.parse(localStorage.getItem('lockedin_local_doubts') || '[]');
-      const d = doubts.find(x => x.doubtId === doubtId);
-      if (d) {
-        d.status = 'RESOLVED';
-        d.acceptedAnswerId = answerId;
-        d.solverUid = solverUid;
-        localStorage.setItem('lockedin_local_doubts', JSON.stringify(doubts));
-      }
-      const key = `lockedin_doubt_answers_${doubtId}`;
-      const answers = JSON.parse(localStorage.getItem(key) || '[]');
-      const a = answers.find(x => x.answerId === answerId);
-      if (a) {
-        a.isAccepted = true;
-        localStorage.setItem(key, JSON.stringify(answers));
-      }
-      const ch = this.getChannel('doubts_global');
-      ch.postMessage({ type: 'ANSWER_ACCEPTED', doubtId, answerId, solverUid });
-    } catch (e) {}
+    await this.ensureAuth();
+    await this.db.collection('doubts').doc(doubtId).update({
+      status: 'RESOLVED',
+      acceptedAnswerId: answerId,
+      solverUid: solverUid,
+      updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await this.db.collection('doubts').doc(doubtId).collection('answers').doc(answerId).update({
+      isAccepted: true,
+      updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+    });
     return true;
   }
 }

@@ -84,6 +84,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Toast Notification System
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function showToast(message, duration = 2500) {
     let toast = document.getElementById('app-toast');
     if (!toast) {
@@ -105,21 +115,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 2. Real Active Public Rooms (Synced with Firestore)
   let currentFilter = 'all';
-  let activeRoomsCache = [
-    {
-      id: 'MAIN-STUDY-HALL',
-      roomId: 'MAIN-STUDY-HALL',
-      name: '⚡ Main Study Hall (24/7 Community)',
-      title: '⚡ Main Study Hall (24/7 Community)',
-      host: 'Community',
-      category: 'all',
-      sector: 'all',
-      tag: '🌐 Open Study Hall',
-      timer: '25m',
-      color: 'color-green',
-      activeCount: 1
+  const DEFAULT_MAIN_HALL = {
+    id: 'MAIN-STUDY-HALL',
+    roomId: 'MAIN-STUDY-HALL',
+    name: '⚡ Main Study Hall (24/7 Community)',
+    title: '⚡ Main Study Hall (24/7 Community)',
+    host: 'Community',
+    category: 'all',
+    sector: 'all',
+    tag: '🌐 Open Study Hall',
+    timer: '25m',
+    color: 'color-green',
+    activeCount: 1
+  };
+  let activeRoomsCache = [{ ...DEFAULT_MAIN_HALL }];
+
+  function mergeRoomsWithMainHall(freshRooms) {
+    const list = Array.isArray(freshRooms) ? [...freshRooms] : [];
+    const hasMain = list.some(r => (r.roomId || r.id) === 'MAIN-STUDY-HALL');
+    if (!hasMain) {
+      list.unshift({ ...DEFAULT_MAIN_HALL });
     }
-  ];
+    return list;
+  }
 
   function renderPublicRooms(roomsList = activeRoomsCache) {
     const listEl = document.getElementById('public-room-list');
@@ -174,16 +192,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Connect Active Rooms to Real-Time Firestore Listener
   window.FirebaseSync.listenToActiveRooms((freshRooms) => {
-    if (freshRooms && freshRooms.length > 0) {
-      // Merge with default Main Study Hall
-      const hasMain = freshRooms.some(r => (r.roomId || r.id) === 'MAIN-STUDY-HALL');
-      if (!hasMain) {
-        freshRooms.unshift(activeRoomsCache[0]);
-      }
-      activeRoomsCache = freshRooms;
-    }
+    activeRoomsCache = mergeRoomsWithMainHall(freshRooms);
     renderPublicRooms(activeRoomsCache);
   });
+
+  // Render default immediately until Firestore snapshot arrives
+  renderPublicRooms(activeRoomsCache);
 
   // Filter chips
   document.querySelectorAll('.filter-chip').forEach(chip => {
@@ -195,20 +209,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Wire 🔄 Refresh button with spinning animation & immediate getDocs() fetch
+  // Wire 🔄 Refresh button with spinning animation & immediate get() fetch
   const refreshRoomsBtn = document.getElementById('btn-refresh-rooms');
   if (refreshRoomsBtn) {
     refreshRoomsBtn.addEventListener('click', async () => {
       refreshRoomsBtn.classList.add('is-spinning');
       try {
         const fresh = await window.FirebaseSync.getActiveRoomsOnce();
-        if (fresh && fresh.length > 0) {
-          activeRoomsCache = fresh;
-        }
+        activeRoomsCache = mergeRoomsWithMainHall(fresh);
         renderPublicRooms(activeRoomsCache);
-        showToast('🔄 Active room list refreshed');
+        showToast(`🔄 Refreshed (${activeRoomsCache.length} active ${activeRoomsCache.length === 1 ? 'room' : 'rooms'})`);
       } catch (err) {
         console.warn('Refresh error:', err);
+        showToast('❌ Refresh failed: ' + (err.message || 'Check Firestore connection'), 4000);
       } finally {
         setTimeout(() => refreshRoomsBtn.classList.remove('is-spinning'), 650);
       }
@@ -363,7 +376,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Join WebRTC room with normalized uppercase room ID
-    await window.WebRTCRoom.joinStudyRoom(cleanRoom, isPrivate, passcode);
+    try {
+      await window.WebRTCRoom.joinStudyRoom(cleanRoom, isPrivate, passcode);
+    } catch (joinErr) {
+      console.error('[App] Failed to join cloud study room:', joinErr);
+      showToast('❌ ' + (joinErr.message || 'Could not join study room in Cloud Firestore.'), 5000);
+      window.WebRTCRoom.leaveStudyRoom();
+      return;
+    }
 
     // Start Trigger Engine monitoring with active camera element
     const localCamVideo = document.getElementById('local-cam-video');
@@ -478,13 +498,33 @@ document.addEventListener('DOMContentLoaded', () => {
   const headerUserCallsign = document.getElementById('header-user-callsign');
 
   function updateAuthUI(user) {
-    if (user && user.isVerified) {
+    // Show verified chip ONLY for genuinely authenticated Firebase Google users (never anonymous/local)
+    const fbAuthUser = window.FirebaseSync && window.FirebaseSync.auth ? window.FirebaseSync.auth.currentUser : null;
+    if (user && fbAuthUser && !fbAuthUser.isAnonymous && user.isVerified) {
       if (googleAuthBtn) googleAuthBtn.style.display = 'none';
       if (userProfileChip) {
         userProfileChip.classList.remove('hidden');
-        const initial = (user.callSign || user.displayName || 'S').slice(0, 1).toUpperCase();
-        if (headerAvatarInitial) headerAvatarInitial.textContent = initial;
-        if (headerUserCallsign) headerUserCallsign.textContent = user.callSign || user.displayName || 'Scholar';
+        userProfileChip.title = 'Signed in with Google (Click to sign out)';
+        const label = user.callSign || user.displayName || 'Scholar';
+        const initial = label.slice(0, 1).toUpperCase();
+        if (headerAvatarInitial) {
+          headerAvatarInitial.textContent = '';
+          if (user.photoURL) {
+            const img = document.createElement('img');
+            img.src = user.photoURL;
+            img.alt = '';
+            img.referrerPolicy = 'no-referrer';
+            img.style.cssText = 'width:100%;height:100%;border-radius:50%;object-fit:cover;';
+            img.onerror = () => { headerAvatarInitial.textContent = initial; };
+            headerAvatarInitial.appendChild(img);
+          } else {
+            headerAvatarInitial.textContent = initial;
+          }
+        }
+        if (headerUserCallsign) headerUserCallsign.textContent = label;
+        if (displayNameInput && (!displayNameInput.value || displayNameInput.value.startsWith('Scholar_'))) {
+          displayNameInput.value = label;
+        }
       }
     } else {
       if (googleAuthBtn) googleAuthBtn.style.display = 'inline-flex';
@@ -492,17 +532,40 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  if (userProfileChip) {
+    userProfileChip.style.cursor = 'pointer';
+    userProfileChip.addEventListener('click', async () => {
+      if (confirm('Sign out of your Google Scholar account?')) {
+        try {
+          await window.FirebaseSync.signOut();
+          showToast('Signed out.');
+        } catch (err) {
+          showToast('❌ ' + (err.message || 'Sign-out failed.'));
+        }
+      }
+    });
+  }
+
   if (googleAuthBtn) {
     googleAuthBtn.addEventListener('click', async () => {
+      if (!window.FirebaseSync.isConfigured) {
+        showToast('⚠️ Firebase not configured. Paste your config in Admin → Firebase Setup first.', 4000);
+        return;
+      }
       try {
         googleAuthBtn.disabled = true;
         googleAuthBtn.innerHTML = '<span>⏳ Signing in...</span>';
         const user = await window.FirebaseSync.signInWithGoogle();
-        updateAuthUI(user);
-        showToast(`✓ Welcome, ${user.callSign || user.displayName}! Verified profile synced.`);
+        if (user) {
+          updateAuthUI(user);
+          showToast(`✅ Welcome, ${user.callSign || user.displayName}! Google account verified.`);
+        }
+        // If user is null, a redirect was triggered — page will reload
       } catch (err) {
         console.warn('[Auth] Sign-in error:', err);
-        showToast('Google Sign-In cancelled or unavailable.');
+        const msg = err.message || 'Sign-in failed.';
+        // Show the real error — never silently swallow it
+        showToast(`❌ ${msg}`, 5000);
       } finally {
         googleAuthBtn.disabled = false;
         googleAuthBtn.innerHTML = '<span id="auth-btn-icon">🌐</span> <span id="auth-btn-label">Sign in</span>';
@@ -870,25 +933,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const firebaseStatusPill = document.getElementById('firebase-status-pill');
 
   if (saveFirebaseBtn && firebaseConfigTextarea) {
-    // Populate current saved config if present
-    const existing = localStorage.getItem('lockedin_firebase_config');
-    if (existing) {
-      firebaseConfigTextarea.value = existing;
-      if (firebaseStatusPill) {
-        firebaseStatusPill.textContent = 'Cloud Connected';
-        firebaseStatusPill.className = 'pill-online';
-      }
+    const activeCfg = window.FirebaseSync.getSavedConfig();
+    if (activeCfg) {
+      firebaseConfigTextarea.value = JSON.stringify(activeCfg, null, 2);
+    }
+    if (firebaseStatusPill && window.FirebaseSync.isConfigured) {
+      firebaseStatusPill.textContent = `Cloud Connected (${activeCfg?.projectId || 'my-study-project-c37cd'})`;
+      firebaseStatusPill.className = 'pill-online';
     }
 
     saveFirebaseBtn.addEventListener('click', () => {
       const raw = firebaseConfigTextarea.value.trim();
       if (!raw) {
-        localStorage.removeItem('lockedin_firebase_config');
-        alert('Cleared Firebase config. App will run in Local/PeerJS Instant Mode.');
-        if (firebaseStatusPill) {
-          firebaseStatusPill.textContent = 'Local Instant Mode';
-          firebaseStatusPill.className = 'pill-local';
-        }
+        window.FirebaseSync.saveConfig(null);
+        const defCfg = window.FirebaseSync.getSavedConfig();
+        firebaseConfigTextarea.value = JSON.stringify(defCfg, null, 2);
+        alert(`Reverted to default Cloud Firebase (${defCfg.projectId}).`);
         return;
       }
 
@@ -898,7 +958,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (success) {
           alert('Firebase config saved successfully! Connected to cloud.');
           if (firebaseStatusPill) {
-            firebaseStatusPill.textContent = 'Cloud Connected';
+            firebaseStatusPill.textContent = `Cloud Connected (${parsed.projectId || 'custom'})`;
             firebaseStatusPill.className = 'pill-online';
           }
         } else {
@@ -1252,20 +1312,35 @@ document.addEventListener('DOMContentLoaded', () => {
   const shopUserCoins = document.getElementById('shop-user-coins');
 
   function updateShopUI() {
+    // Ensure Leaderboard is ready with safe defaults
     if (!window.Leaderboard) return;
+    const cu = window.Leaderboard.currentUser;
+    if (!cu) return;
+
+    // Guarantee inventory has correct defaults
+    if (!cu.inventory) cu.inventory = { pets: ['cat'], frames: [], themes: [] };
+    if (!cu.inventory.pets) cu.inventory.pets = ['cat'];
+    if (!cu.inventory.frames) cu.inventory.frames = [];
+    if (!cu.inventory.themes) cu.inventory.themes = [];
+    if (!cu.activePet) cu.activePet = 'cat';
+    // Pixel Cat is always free and owned
+    if (!cu.inventory.pets.includes('cat')) cu.inventory.pets.push('cat');
+
     if (shopUserCoins) {
-      shopUserCoins.textContent = `🪙 ${window.Leaderboard.currentUser.coins || 0} Coins`;
+      shopUserCoins.textContent = `🪙 ${cu.coins || 0} Coins`;
     }
-    const inv = window.Leaderboard.currentUser.inventory || { pets: ['cat'], frames: [], themes: [] };
-    const activePet = window.Leaderboard.currentUser.activePet || 'cat';
+    const inv = cu.inventory;
+    const activePet = cu.activePet;
 
     // Update Pet buttons
     document.querySelectorAll('#shop-tab-pets .shop-card').forEach(card => {
       const id = card.dataset.item;
       const btn = card.querySelector('.shop-action-btn');
+      if (!btn) return;
       if (id === activePet) {
         btn.className = 'shop-action-btn equip-btn';
-        btn.textContent = 'Equipped';
+        btn.textContent = 'Equipped ✓';
+        btn.onclick = null;
       } else if (inv.pets && inv.pets.includes(id)) {
         btn.className = 'shop-action-btn equip-btn';
         btn.textContent = 'Equip';
@@ -1294,10 +1369,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('#shop-tab-frames .shop-card').forEach(card => {
       const id = card.dataset.item;
       const btn = card.querySelector('.shop-action-btn');
+      if (!btn) return;
       const isOwned = inv.frames && inv.frames.includes(id);
       if (isOwned) {
         btn.className = 'shop-action-btn owned-btn';
-        btn.textContent = 'Owned';
+        btn.textContent = 'Owned ✓';
+        btn.onclick = null;
       } else {
         btn.className = 'shop-action-btn buy-btn';
         btn.textContent = 'Buy';
@@ -1317,10 +1394,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('#shop-tab-themes .shop-card').forEach(card => {
       const id = card.dataset.item;
       const btn = card.querySelector('.shop-action-btn');
+      if (!btn) return;
       const isOwned = inv.themes && inv.themes.includes(id);
       if (isOwned) {
         btn.className = 'shop-action-btn owned-btn';
-        btn.textContent = 'Owned';
+        btn.textContent = 'Owned ✓';
+        btn.onclick = null;
       } else {
         btn.className = 'shop-action-btn buy-btn';
         btn.textContent = 'Buy';

@@ -276,7 +276,7 @@ class WebRTCRoomManager {
     this.requestWakeLock();
 
     const callSign = localStorage.getItem('lockedin_display_name') || 'Scholar_' + this.peerId.slice(-4);
-    const isVerified = localStorage.getItem('lockedin_is_verified') === 'true';
+    const isVerified = !!(window.FirebaseSync?.currentUser && !window.FirebaseSync.currentUser.isAnonymous && window.FirebaseSync.currentUser.isVerified);
 
     // 1. Write Presence to rooms/{roomId}/participants/{peerId}
     await window.FirebaseSync.setParticipantPresence(this.roomId, this.peerId, {
@@ -286,12 +286,29 @@ class WebRTCRoomManager {
       isVerified: isVerified
     });
 
-    // 2. Start 15s Room Heartbeat Ping
+    // 2. Start 15s Room & Participant Heartbeat Ping
     if (this.pingInterval) clearInterval(this.pingInterval);
     this.pingInterval = setInterval(() => {
       window.FirebaseSync.pingRoom(this.roomId, 1 + this.peers.size);
+      window.FirebaseSync.updateParticipantHeartbeat(this.roomId, this.peerId);
     }, 15000);
-    window.FirebaseSync.pingRoom(this.roomId, 1);
+    await window.FirebaseSync.pingRoom(this.roomId, 1);
+
+    // Clean up presence if browser tab closes abruptly
+    if (this._unloadHandler) {
+      window.removeEventListener('pagehide', this._unloadHandler);
+      window.removeEventListener('beforeunload', this._unloadHandler);
+    }
+    this._unloadHandler = () => {
+      if (this.roomId && this.peerId) {
+        window.FirebaseSync.removeParticipantPresence(this.roomId, this.peerId);
+        if (this.peers.size === 0) {
+          window.FirebaseSync.pingRoom(this.roomId, 0);
+        }
+      }
+    };
+    window.addEventListener('pagehide', this._unloadHandler);
+    window.addEventListener('beforeunload', this._unloadHandler);
 
     // 3. Listen to Participants & Negotiate Peer-Pairs
     this.unsubscribeParticipants = window.FirebaseSync.listenToParticipants(this.roomId, (participants) => {
@@ -300,7 +317,7 @@ class WebRTCRoomManager {
 
     // 4. Listen to Room Events
     this.unsubscribeEvents = window.FirebaseSync.listenToRoomEvents(this.roomId, (event) => {
-      if (event && event.type) this.handleIncomingData(event, event.senderId);
+      if (event && event.type) this.handleIncomingData(event, event.payload?.senderPeerId || event.senderId);
     });
 
     this.updateGridLayout();
@@ -385,10 +402,15 @@ class WebRTCRoomManager {
       candidateQueue: [],
       stream: null,
       remoteStream: new MediaStream(),
+      answerApplied: false,
       unsubsConn: null,
       unsubsCand: null
     };
     this.peers.set(remotePeerId, peerObj);
+
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[WebRTC Caller] ICE state (${remotePeerId}):`, pc.iceConnectionState);
+    };
 
     // Add local tracks BEFORE offer creation
     const outStream = this.getOutgoingStream();
@@ -426,15 +448,19 @@ class WebRTCRoomManager {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
+      const myUid = window.FirebaseSync.auth?.currentUser?.uid || window.FirebaseSync.currentUser?.uid || this.peerId;
+      const remoteUid = participantData?.userId || remotePeerId;
+
       await window.FirebaseSync.writeConnectionOffer(this.roomId, connectionId, {
-        callerId: this.peerId,
-        calleeId: remotePeerId,
+        callerId: myUid,
+        calleeId: remoteUid,
         offer: { type: offer.type, sdp: offer.sdp }
       });
 
       // Listen for Callee's Answer
       peerObj.unsubsConn = window.FirebaseSync.listenToConnection(this.roomId, connectionId, async (data) => {
-        if (data && data.answer && pc.signalingState !== 'stable') {
+        if (data && data.answer && !peerObj.answerApplied && pc.signalingState !== 'stable') {
+          peerObj.answerApplied = true;
           console.log(`[WebRTC Caller] Answer received from ${remotePeerId}`);
           await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
           this.drainCandidateQueue(remotePeerId);
@@ -882,21 +908,24 @@ class WebRTCRoomManager {
   }
 
   handleIncomingData(data, fromPeerId) {
-    if (!data || fromPeerId === this.peerId) return;
+    if (!data) return;
+    const evt = (data.payload && typeof data.payload === 'object') ? { ...data, ...data.payload } : data;
+    const peerKey = evt.senderPeerId || evt.peerId || fromPeerId;
+    if (!peerKey || peerKey === this.peerId) return;
 
-    if (data.type === 'HAND_RAISED') {
-      const tile = document.getElementById(`tile-${fromPeerId}`);
+    if (evt.type === 'HAND_RAISED') {
+      const tile = document.getElementById(`tile-${peerKey}`);
       if (tile) {
         const ind = tile.querySelector('.hand-indicator');
-        if (ind) ind.classList.toggle('hidden', !data.isHandRaised);
+        if (ind) ind.classList.toggle('hidden', !evt.isHandRaised);
       }
-    } else if (data.type === 'CAMERA_PRIVACY_TOGGLED') {
-      const tile = document.getElementById(`tile-${fromPeerId}`);
+    } else if (evt.type === 'CAMERA_PRIVACY_TOGGLED') {
+      const tile = document.getElementById(`tile-${peerKey}`);
       if (tile) {
         const avatar = tile.querySelector('.tile-avatar-card');
         const video = tile.querySelector('.remote-video');
         if (avatar && video) {
-          if (data.isMuted) {
+          if (evt.isMuted) {
             avatar.classList.remove('hidden');
             video.style.opacity = '0';
           } else {
@@ -905,9 +934,9 @@ class WebRTCRoomManager {
           }
         }
       }
-    } else if (data.type === 'SHAME_TRIGGER') {
+    } else if (evt.type === 'SHAME_TRIGGER') {
       if (window.TriggerEngine && window.TriggerEngine.showShameToast) {
-        window.TriggerEngine.showShameToast(`🚨 ${data.senderName || 'A peer'} was caught: ${data.reason || 'Distracted!'}`);
+        window.TriggerEngine.showShameToast(`🚨 ${evt.senderName || 'A peer'} was caught: ${evt.reason || 'Distracted!'}`);
       }
     }
   }
@@ -960,9 +989,17 @@ class WebRTCRoomManager {
       this.unsubscribeEvents = null;
     }
 
-    // Clean up Firestore presence
+    // Clean up Firestore presence & update room activeCount if empty
+    if (this._unloadHandler) {
+      window.removeEventListener('pagehide', this._unloadHandler);
+      window.removeEventListener('beforeunload', this._unloadHandler);
+      this._unloadHandler = null;
+    }
     if (this.roomId && this.peerId) {
       window.FirebaseSync.removeParticipantPresence(this.roomId, this.peerId);
+      if (this.peers.size === 0) {
+        window.FirebaseSync.pingRoom(this.roomId, 0);
+      }
     }
 
     // Stop tracks
