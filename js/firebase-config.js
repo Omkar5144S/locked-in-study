@@ -571,11 +571,11 @@ class FirebaseManager {
         ? data.lastPing.toMillis()
         : (data.updatedAt?.toMillis ? data.updatedAt.toMillis() : now);
       const count = data.activeCount !== undefined ? data.activeCount : 1;
-      const isFresh = Math.abs(now - lastPingMs) <= 45000; // 45s timeout purges ghost rooms
+      const isFresh = Math.abs(now - lastPingMs) <= 120000; // 120s (2-min) heartbeat timeout
       if (rId === 'MAIN-STUDY-HALL' || (isFresh && count > 0)) {
         rooms.push({ ...data, roomId: rId, id: rId, _lastPingMs: lastPingMs });
       } else if (rId !== 'MAIN-STUDY-HALL' && doc.ref) {
-        // Best-effort auto-cleanup of timed-out / empty user-created rooms
+        // Best-effort auto-cleanup of closed/timed-out user-created rooms (>120s)
         doc.ref.delete().catch(() => {});
       }
     });
@@ -686,7 +686,8 @@ class FirebaseManager {
       isHandRaised: false,
       timerRemaining: 1500,
       joinedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-      lastSeen: window.firebase.firestore.FieldValue.serverTimestamp()
+      lastSeen: window.firebase.firestore.FieldValue.serverTimestamp(),
+      lastHeartbeat: window.firebase.firestore.FieldValue.serverTimestamp()
     };
 
     await this.db.collection('rooms').doc(cleanRoom).collection('participants').doc(peerId).set(payload);
@@ -697,7 +698,8 @@ class FirebaseManager {
     const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
     try {
       await this.db.collection('rooms').doc(cleanRoom).collection('participants').doc(peerId).update({
-        lastSeen: window.firebase.firestore.FieldValue.serverTimestamp()
+        lastSeen: window.firebase.firestore.FieldValue.serverTimestamp(),
+        lastHeartbeat: window.firebase.firestore.FieldValue.serverTimestamp()
       });
     } catch (e) {
       console.warn('[Firebase] participant heartbeat error:', e);
@@ -715,8 +717,10 @@ class FirebaseManager {
         const now = Date.now();
         const activeRemaining = remaining.docs.filter(d => {
           const data = d.data();
-          const lastSeenMs = data.lastSeen?.toMillis ? data.lastSeen.toMillis() : (data.joinedAt?.toMillis ? data.joinedAt.toMillis() : now);
-          return Math.abs(now - lastSeenMs) <= 45000;
+          const hbMs = data.lastHeartbeat?.toMillis
+            ? data.lastHeartbeat.toMillis()
+            : (data.lastSeen?.toMillis ? data.lastSeen.toMillis() : (data.joinedAt?.toMillis ? data.joinedAt.toMillis() : now));
+          return Math.abs(now - hbMs) <= 120000;
         });
         if (activeRemaining.length === 0) {
           await roomRef.delete().catch(async () => {
@@ -742,11 +746,11 @@ class FirebaseManager {
         const now = Date.now();
         snapshot.forEach(doc => {
           const data = doc.data();
-          const lastSeenMs = data.lastSeen?.toMillis
-            ? data.lastSeen.toMillis()
-            : (data.joinedAt?.toMillis ? data.joinedAt.toMillis() : now);
-          // Ignore & purge crashed/stale ghost peers older than 45 seconds
-          if (Math.abs(now - lastSeenMs) <= 45000) {
+          const hbMs = data.lastHeartbeat?.toMillis
+            ? data.lastHeartbeat.toMillis()
+            : (data.lastSeen?.toMillis ? data.lastSeen.toMillis() : (data.joinedAt?.toMillis ? data.joinedAt.toMillis() : now));
+          // Ignore & purge disconnected/closed peers whose lastHeartbeat is older than 120 seconds (2 min)
+          if (Math.abs(now - hbMs) <= 120000) {
             list.push(data);
           } else if (doc.ref) {
             doc.ref.delete().catch(() => {});

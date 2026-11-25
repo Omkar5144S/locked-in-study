@@ -302,12 +302,12 @@ class WebRTCRoomManager {
       isVerified: isVerified
     });
 
-    // 2. Start 15s Room & Participant Heartbeat Ping
+    // 2. Start 20s Room & Participant Heartbeat Ping
     if (this.pingInterval) clearInterval(this.pingInterval);
     this.pingInterval = setInterval(() => {
       window.FirebaseSync.pingRoom(this.roomId, 1 + this.peers.size);
       window.FirebaseSync.updateParticipantHeartbeat(this.roomId, this.peerId);
-    }, 15000);
+    }, 20000);
     await window.FirebaseSync.pingRoom(this.roomId, 1);
 
     // Clean up presence if browser tab closes abruptly
