@@ -70,7 +70,8 @@ class WebRTCRoomManager {
     this.pingInterval = null;
     this.adaptiveQualityInterval = null;
     this.videoQualityMode = localStorage.getItem('lockedin_video_quality') || 'auto';
-    this._autoQualityTierIndex = 1; // Starts at 720p60 in Auto mode
+    const isMobileInit = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.innerWidth < 768;
+    this._autoQualityTierIndex = isMobileInit ? 3 : 2; // Start at 480p on mobile, 540p on PC to prevent initial buffering
     this._healthyStatsCount = 0;
   }
 
@@ -151,11 +152,15 @@ class WebRTCRoomManager {
     const maxFps = isBatterySaver ? 12 : 24;
     this.isDualFeedActive = (mode === 'dual') && !isMobile;
 
+    const audioConstraints = audioDeviceId
+      ? { deviceId: { exact: audioDeviceId }, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+
     const camConstraints = {
       video: videoDeviceId 
-        ? { deviceId: { exact: videoDeviceId }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { max: maxFps } } 
-        : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { max: maxFps } },
-      audio: audioDeviceId ? { deviceId: { exact: audioDeviceId } } : true
+        ? { deviceId: { exact: videoDeviceId }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: Math.min(20, maxFps), max: maxFps } } 
+        : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: Math.min(20, maxFps), max: maxFps } },
+      audio: audioConstraints
     };
 
     // 1. Attempt standard camera + mic
@@ -173,6 +178,8 @@ class WebRTCRoomManager {
     }
 
     this.ensureAudioTrack(this.localCamStream);
+    const initVidTrack = this.localCamStream && this.localCamStream.getVideoTracks()[0];
+    if (initVidTrack && 'contentHint' in initVidTrack) initVidTrack.contentHint = 'motion';
     this.rawCamStream = this.localCamStream;
     this.muteMic(true);
 
@@ -484,6 +491,9 @@ class WebRTCRoomManager {
     peerObj.remoteStream = peerObj.remoteStream || new MediaStream();
     pc.ontrack = (event) => {
       console.log(`[WebRTC Caller] Track received from ${remotePeerId}:`, event.track.kind);
+      if (event.receiver && 'playoutDelayHint' in event.receiver) {
+        try { event.receiver.playoutDelayHint = 0; } catch (e) {}
+      }
       // Add track to the persistent stream (avoids black frames from srcObject re-assignment)
       if (!peerObj.remoteStream.getTracks().find(t => t.id === event.track.id)) {
         peerObj.remoteStream.addTrack(event.track);
@@ -560,6 +570,9 @@ class WebRTCRoomManager {
 
         pc.ontrack = (event) => {
           console.log(`[WebRTC Callee] Track received from ${remotePeerId}:`, event.track.kind);
+          if (event.receiver && 'playoutDelayHint' in event.receiver) {
+            try { event.receiver.playoutDelayHint = 0; } catch (e) {}
+          }
           // Use a single persistent MediaStream per peer to avoid srcObject churn
           peerObj.remoteStream = peerObj.remoteStream || new MediaStream();
           if (!peerObj.remoteStream.getTracks().find(t => t.id === event.track.id)) {
@@ -839,12 +852,13 @@ class WebRTCRoomManager {
       }
 
       this.localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { cursor: 'always' },
+        video: { cursor: 'always', frameRate: { ideal: 15, max: 15 } },
         audio: false
       });
 
       this.isScreenSharing = true;
       const screenVidTrack = this.localScreenStream.getVideoTracks()[0];
+      if (screenVidTrack && 'contentHint' in screenVidTrack) screenVidTrack.contentHint = 'detail';
       this.replaceOutgoingVideoTrack(screenVidTrack);
 
       const localScreenVideo = document.getElementById('local-screen-video');
@@ -1126,9 +1140,15 @@ class WebRTCRoomManager {
 
     if (!this._filterCanvas) {
       this._filterCanvas = document.createElement('canvas');
-      this._filterCanvas.width = 640;
-      this._filterCanvas.height = 480;
-      this._filterCtx = this._filterCanvas.getContext('2d');
+      this._filterCanvas.width = 480;
+      this._filterCanvas.height = 360;
+      this._filterCtx = this._filterCanvas.getContext('2d', { alpha: false });
+    }
+    if (!this._blurTmpCanvas) {
+      this._blurTmpCanvas = document.createElement('canvas');
+      this._blurTmpCanvas.width = 64;
+      this._blurTmpCanvas.height = 48;
+      this._blurTmpCtx = this._blurTmpCanvas.getContext('2d', { alpha: false });
     }
     if (!this._filterVideoEl) {
       this._filterVideoEl = document.createElement('video');
@@ -1146,18 +1166,26 @@ class WebRTCRoomManager {
     const w = this._filterCanvas.width;
     const h = this._filterCanvas.height;
     const ctx = this._filterCtx;
+    const tmpCanvas = this._blurTmpCanvas;
+    const tmpCtx = this._blurTmpCtx;
     let segBusy = false;
 
+    // Fast GPU-friendly downscale/upscale blur (<1ms vs 40ms CPU ctx.filter)
+    const drawFastBlurredVideo = () => {
+      tmpCtx.drawImage(this._filterVideoEl, 0, 0, tmpCanvas.width, tmpCanvas.height);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'low';
+      ctx.drawImage(tmpCanvas, 0, 0, w, h);
+    };
+
     const renderFrame = () => {
-      if (!this._filterVideoEl || this._filterVideoEl.readyState < 2) return;
+      if (document.hidden || !this._filterVideoEl || this._filterVideoEl.readyState < 2) return;
       ctx.save();
-      ctx.clearRect(0, 0, w, h);
 
       if (this.activeVideoFilter === 'privacy-blur') {
-        ctx.filter = 'blur(12px)';
-        ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
+        drawFastBlurredVideo();
       } else if (this.activeVideoFilter === 'bw') {
-        ctx.filter = 'grayscale(100%) contrast(1.15)';
+        ctx.filter = 'grayscale(100%) contrast(1.1)';
         ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
       } else if (this.activeVideoFilter === 'bg-dim') {
         ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
@@ -1172,24 +1200,23 @@ class WebRTCRoomManager {
           this._selfieSegmentation.send({ image: this._filterVideoEl }).catch(() => {}).finally(() => { segBusy = false; });
         }
         if (this._latestSegMask) {
+          ctx.clearRect(0, 0, w, h);
           ctx.drawImage(this._latestSegMask, 0, 0, w, h);
           ctx.globalCompositeOperation = 'source-in';
           ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
           ctx.globalCompositeOperation = 'destination-over';
-          ctx.filter = 'blur(14px)';
-          ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
+          drawFastBlurredVideo();
         } else {
-          ctx.filter = 'blur(10px)';
-          ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
+          drawFastBlurredVideo();
         }
       }
       ctx.restore();
     };
 
     renderFrame();
-    this._filterLoopId = setInterval(renderFrame, 50); // ~20fps lightweight filter loop
+    this._filterLoopId = setInterval(renderFrame, 66); // 15fps smooth low-CPU filter loop
 
-    const captured = this._filterCanvas.captureStream(20);
+    const captured = this._filterCanvas.captureStream(15);
     const outStream = new MediaStream();
     const filteredVidTrack = captured.getVideoTracks()[0];
     if (filteredVidTrack) {
@@ -1282,6 +1309,8 @@ class WebRTCRoomManager {
             params.encodings = [{}];
           }
           params.encodings[0].maxBitrate = preset.maxBitrate;
+          params.encodings[0].maxFramerate = preset.fps;
+          params.degradationPreference = 'maintain-framerate';
           await videoSender.setParameters(params);
         }
       } catch (err) {
