@@ -34,17 +34,31 @@ class StudyTimerManager {
     this.setPreset(f, b);
   }
 
-  startTimer() {
+  syncRoomTimerToFirestore() {
+    if (window.WebRTCRoom && window.WebRTCRoom.roomId && window.FirebaseSync && window.FirebaseSync.updateRoomTimer) {
+      window.FirebaseSync.updateRoomTimer(window.WebRTCRoom.roomId, {
+        timerEndAt: this.isRunning ? (Date.now() + this.secondsLeft * 1000) : null,
+        timerMode: this.mode,
+        isRunning: this.isRunning,
+        secondsLeft: this.secondsLeft
+      });
+    }
+  }
+
+  startTimer(skipSync = false) {
     if (this.isRunning) return;
     this.isRunning = true;
     this.updateControlsUI();
 
+    if (this.timerInterval) clearInterval(this.timerInterval);
     this.timerInterval = setInterval(() => {
       this.tick();
     }, 1000);
+
+    if (!skipSync) this.syncRoomTimerToFirestore();
   }
 
-  pauseTimer() {
+  pauseTimer(skipSync = false) {
     this.isRunning = false;
     if (this.timerInterval) {
       clearInterval(this.timerInterval);
@@ -54,10 +68,12 @@ class StudyTimerManager {
       window.TriggerEngine.resetAndHideAllOverlays();
     }
     this.updateControlsUI();
+
+    if (!skipSync) this.syncRoomTimerToFirestore();
   }
 
-  resetTimer() {
-    this.pauseTimer();
+  resetTimer(skipSync = false) {
+    this.pauseTimer(true);
     this.mode = 'FOCUS';
     this.totalSeconds = this.focusDurationMinutes * 60;
     this.secondsLeft = this.totalSeconds;
@@ -67,6 +83,8 @@ class StudyTimerManager {
     }
     this.renderDisplay();
     this.updateModePill();
+
+    if (!skipSync) this.syncRoomTimerToFirestore();
   }
 
   tick() {
@@ -175,6 +193,36 @@ class StudyTimerManager {
     // Reset current focus block
     this.secondsLeft = this.focusDurationMinutes * 60;
     this.renderDisplay();
+  }
+
+  syncFromRoomDoc(roomData) {
+    if (!roomData || typeof roomData.isRunning !== 'boolean') return;
+    const nextMode = String(roomData.timerMode || 'FOCUS').toUpperCase();
+    const shouldRun = !!roomData.isRunning;
+
+    if (nextMode !== this.mode) {
+      this.mode = nextMode;
+      this.updateModePill();
+    }
+
+    if (shouldRun && roomData.timerEndAt) {
+      const remaining = Math.max(0, Math.round((roomData.timerEndAt - Date.now()) / 1000));
+      this.secondsLeft = remaining;
+      this.renderDisplay();
+      if (!this.isRunning) {
+        this.startTimer(true);
+      }
+    } else {
+      if (typeof roomData.secondsLeft === 'number') {
+        this.secondsLeft = Math.max(0, roomData.secondsLeft);
+      }
+      this.renderDisplay();
+      if (this.isRunning) {
+        this.pauseTimer(true);
+      } else {
+        this.updateControlsUI();
+      }
+    }
   }
 
   syncFromHost(data) {

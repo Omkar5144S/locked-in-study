@@ -119,12 +119,14 @@ class WebRTCRoomManager {
   // Initialize Local Media Streams with Multi-Tier Fallback
   async initLocalMedia({ mode, videoDeviceId, audioDeviceId }) {
     const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.innerWidth < 768;
+    const isBatterySaver = localStorage.getItem('lockedin_battery_saver') === 'true';
+    const maxFps = isBatterySaver ? 12 : 24;
     this.isDualFeedActive = (mode === 'dual') && !isMobile;
 
     const camConstraints = {
       video: videoDeviceId 
-        ? { deviceId: { exact: videoDeviceId }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { max: 24 } } 
-        : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { max: 24 } },
+        ? { deviceId: { exact: videoDeviceId }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { max: maxFps } } 
+        : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { max: maxFps } },
       audio: audioDeviceId ? { deviceId: { exact: audioDeviceId } } : true
     };
 
@@ -319,6 +321,15 @@ class WebRTCRoomManager {
     this.unsubscribeEvents = window.FirebaseSync.listenToRoomEvents(this.roomId, (event) => {
       if (event && event.type) this.handleIncomingData(event, event.payload?.senderPeerId || event.senderId);
     });
+
+    // 5. Synchronized Room Pomodoro listener
+    if (window.FirebaseSync.listenToRoom) {
+      this.unsubscribeRoomDoc = window.FirebaseSync.listenToRoom(this.roomId, (roomData) => {
+        if (window.StudyTimer && window.StudyTimer.syncFromRoomDoc) {
+          window.StudyTimer.syncFromRoomDoc(roomData);
+        }
+      });
+    }
 
     this.updateGridLayout();
     return true;
@@ -644,6 +655,7 @@ class WebRTCRoomManager {
           <span class="user-badge">${this.escapeHtml(callSign)} ${isVerified ? '✓' : ''}</span>
           <span class="subject-badge">${isDeskCam ? '📱 Desk Cam' : '🖥️ Dual Feed'}</span>
           <span class="listening-badge hidden">🎧 Focus</span>
+          <button type="button" class="nudge-peer-btn" title="Send silent desk bell nudge">🔔 Nudge</button>
         </div>
         <div class="hud-bottom">
           <div class="timer-display">25:00</div>
@@ -654,6 +666,18 @@ class WebRTCRoomManager {
     `;
 
     grid.appendChild(tile);
+
+    const nudgeBtn = tile.querySelector('.nudge-peer-btn');
+    if (nudgeBtn) {
+      nudgeBtn.addEventListener('click', () => {
+        this.broadcastData({
+          type: 'SILENT_NUDGE',
+          targetPeerId: remotePeerId
+        });
+        nudgeBtn.textContent = '✓ Nudged';
+        setTimeout(() => { nudgeBtn.textContent = '🔔 Nudge'; }, 2000);
+      });
+    }
     return tile;
   }
 
@@ -720,14 +744,14 @@ class WebRTCRoomManager {
 
     if (this.isCameraPrivacyActive) {
       if (camBtn) {
-        camBtn.innerHTML = '<span>📹 Start Video</span>';
+        camBtn.innerHTML = '<span>📹 Cam</span>';
         camBtn.className = 'control-btn cam-muted';
       }
       if (avatarCard) avatarCard.classList.remove('hidden');
       if (localScreenVideo && !this.isScreenSharing) localScreenVideo.style.opacity = '0';
     } else {
       if (camBtn) {
-        camBtn.innerHTML = '<span>📹 Stop Video</span>';
+        camBtn.innerHTML = '<span>📹 Cam</span>';
         camBtn.className = 'control-btn cam-active';
       }
       if (avatarCard) avatarCard.classList.add('hidden');
@@ -870,10 +894,10 @@ class WebRTCRoomManager {
     const micBtn = document.getElementById('toggle-mic-btn');
     if (micBtn) {
       if (shouldMute) {
-        micBtn.innerHTML = '<span>🎤 Unmute</span>';
+        micBtn.innerHTML = '<span>🎤 Mic</span>';
         micBtn.className = 'control-btn mic-muted';
       } else {
-        micBtn.innerHTML = '<span>🎤 Mute</span>';
+        micBtn.innerHTML = '<span>🎤 Mic</span>';
         micBtn.className = 'control-btn mic-active';
       }
     }
@@ -944,6 +968,33 @@ class WebRTCRoomManager {
       if (window.TriggerEngine && window.TriggerEngine.showShameToast) {
         window.TriggerEngine.showShameToast(`🚨 ${evt.senderName || 'A peer'} was caught: ${evt.reason || 'Distracted!'}`);
       }
+    } else if (evt.type === 'STATUS_TAG_UPDATED') {
+      const tile = document.getElementById(`tile-${peerKey}`);
+      if (tile && evt.statusTag) {
+        const badge = tile.querySelector('.subject-badge');
+        if (badge) badge.textContent = evt.statusTag;
+      }
+    } else if (evt.type === 'SILENT_NUDGE' && evt.targetPeerId === this.peerId) {
+      if (window.Soundboard && window.Soundboard.playSynthesizedTone) {
+        window.Soundboard.playSynthesizedTone('gentle_chime', 0.45);
+      }
+      if (window.TriggerEngine && window.TriggerEngine.showShameToast) {
+        window.TriggerEngine.showShameToast(`🔔 ${evt.senderName || 'Study partner'} sent you a gentle focus nudge!`);
+      }
+    }
+  }
+
+  setBatterySaver(enabled) {
+    localStorage.setItem('lockedin_battery_saver', enabled ? 'true' : 'false');
+    if (this.localCamStream) {
+      const vidTrack = this.localCamStream.getVideoTracks()[0];
+      if (vidTrack && vidTrack.applyConstraints) {
+        vidTrack.applyConstraints({
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { max: enabled ? 12 : 24 }
+        }).catch(err => console.warn('[WebRTC] Battery saver constraint warning:', err));
+      }
     }
   }
 
@@ -993,6 +1044,10 @@ class WebRTCRoomManager {
     if (this.unsubscribeEvents) {
       this.unsubscribeEvents();
       this.unsubscribeEvents = null;
+    }
+    if (this.unsubscribeRoomDoc) {
+      this.unsubscribeRoomDoc();
+      this.unsubscribeRoomDoc = null;
     }
 
     // Clean up Firestore presence & update room activeCount if empty

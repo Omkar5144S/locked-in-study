@@ -27,7 +27,7 @@
       document.documentElement.style.colorScheme = (t === 'vibrant') ? 'light' : 'dark';
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=3.3">
+  <link rel="stylesheet" href="styles.css?v=3.4">
   
   <!-- PeerJS WebRTC Mesh -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -48,7 +48,7 @@
     <div class="logo-area">
       <span class="logo-icon">🔒</span>
       <div>
-        <h2 class="app-title">LOCKED<span class="title-sub">-IN</span></h2>
+        <h2 class="app-title"><span class="app-title-text">LOCKED<span class="title-sub">-IN</span></span></h2>
       </div>
     </div>
 
@@ -302,7 +302,7 @@
         <div class="tile-hud">
           <div class="hud-top">
             <span id="local-user-name" class="user-badge">You</span>
-            <span id="local-subject-goal" class="subject-badge">Deep Study</span>
+            <span id="local-subject-goal" class="subject-badge" style="pointer-events:auto; cursor:pointer;" title="Tap to cycle status">Deep Focus</span>
             <span id="local-listening-badge" class="listening-badge hidden">🎧 Brown Noise</span>
             <span class="points-pill">Active</span>
             <button id="btn-pip-swap" class="mod-btn" style="pointer-events:auto;" title="Swap PiP feeds">🔄 Swap</button>
@@ -336,11 +336,11 @@
       </div>
 
       <div class="mic-voice-controls">
-        <button id="toggle-mic-btn" class="control-btn mic-muted" title="Mute/Unmute Mic">
-          <span>🎤 Unmute</span>
+        <button id="toggle-mic-btn" class="control-btn mic-muted" title="Mute/Unmute Mic (M)">
+          <span>🎤 Mic</span>
         </button>
         <button id="toggle-cam-btn" class="control-btn cam-active" title="Camera Privacy (Stop/Start Video)">
-          <span>📹 Stop Video</span>
+          <span>📹 Cam</span>
         </button>
         <button id="toggle-screen-btn" class="control-btn" title="Screen Share (Share/Stop Sharing Screen)">
           <span>🖥️ Share Screen</span>
@@ -446,12 +446,21 @@
 
       <div class="modal-body">
         <!-- App Settings Overview -->
-        <div class="settings-overview-box" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:14px 16px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-          <div>
-            <strong style="font-size:0.95rem;">Account &amp; Cloud Sync</strong>
-            <div style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;">Project: <code>my-study-project-c37cd</code> • Persistent Login Enabled</div>
+        <div class="settings-overview-box" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:14px 16px; margin-bottom:16px; display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div>
+              <strong style="font-size:0.95rem;">Account &amp; Cloud Sync</strong>
+              <div style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;">Project: <code>my-study-project-c37cd</code> • Persistent Login Enabled</div>
+            </div>
+            <span id="settings-cloud-status-pill" class="pill-online" style="font-size:0.75rem;">Cloud Ready</span>
           </div>
-          <span id="settings-cloud-status-pill" class="pill-online" style="font-size:0.75rem;">Cloud Ready</span>
+          <label style="display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);">
+            <div>
+              <strong style="font-size:0.88rem;">🔋 Battery Saver Mode</strong>
+              <div style="font-size:0.75rem; color:var(--text-muted);">Caps video at 480p @ 12fps to prevent phone overheating</div>
+            </div>
+            <input type="checkbox" id="battery-saver-toggle" style="width:18px; height:18px; accent-color:#30d158;">
+          </label>
         </div>
         <!-- Admin PIN Authentication (Hidden from regular users) -->
         <div id="admin-auth-view" class="admin-auth-box hidden">
@@ -813,13 +822,13 @@
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=3.7"></script>
-  <script src="js/noise-generator.js?v=3.7"></script>
-  <script src="js/firebase-config.js?v=3.7"></script>
-  <script src="js/leaderboard.js?v=3.7"></script>
-  <script src="js/timer.js?v=3.7"></script>
-  <script src="js/webrtc-room.js?v=3.7"></script>
-  <script src="js/trigger-engine.js?v=3.7"></script>
-  <script src="js/app.js?v=3.7"></script>
+  <script src="js/soundboard-admin.js?v=3.8"></script>
+  <script src="js/noise-generator.js?v=3.8"></script>
+  <script src="js/firebase-config.js?v=3.8"></script>
+  <script src="js/leaderboard.js?v=3.8"></script>
+  <script src="js/timer.js?v=3.8"></script>
+  <script src="js/webrtc-room.js?v=3.8"></script>
+  <script src="js/trigger-engine.js?v=3.8"></script>
+  <script src="js/app.js?v=3.8"></script>
 </body>
 </html>

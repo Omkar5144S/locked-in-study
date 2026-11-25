@@ -19,6 +19,20 @@ class StudyNoiseManager {
     this.volume = 0.5;
 
     this.initAudioContext();
+    this.setupIOSAudioUnlock();
+  }
+
+  setupIOSAudioUnlock() {
+    const unlock = () => {
+      this.ensureAudio();
+      if (window.Soundboard && window.Soundboard.ensureAudioResumed) {
+        window.Soundboard.ensureAudioResumed();
+      }
+      document.removeEventListener('touchstart', unlock);
+      document.removeEventListener('click', unlock);
+    };
+    document.addEventListener('touchstart', unlock, { passive: true });
+    document.addEventListener('click', unlock, { passive: true });
   }
 
   initAudioContext() {

@@ -829,7 +829,7 @@ body {
   display: grid;
   gap: 12px;
   width: 100%;
-  height: calc(100vh - 145px);
+  height: calc(100dvh - 145px);
   min-height: 480px;
   box-sizing: border-box;
   flex: 1;
@@ -2187,6 +2187,54 @@ body {
   color: var(--text-muted);
   margin: 0 0 10px 0;
   line-height: 1.35;
+}
+
+.nudge-peer-btn {
+  pointer-events: auto;
+  background: rgba(15, 17, 23, 0.78);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 9999px;
+  padding: 3px 9px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: auto;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.nudge-peer-btn:hover {
+  background: rgba(251, 191, 36, 0.2);
+}
+
+.nudge-peer-btn:active {
+  transform: scale(0.94);
+}
+
+@media (max-width: 639px) {
+  .app-header {
+    padding: 0 8px;
+    gap: 4px;
+  }
+
+  .app-title-text,
+  #auth-btn-icon {
+    display: none;
+  }
+
+  .room-code-pill {
+    letter-spacing: 0 !important;
+    font-size: 0.68rem !important;
+  }
+
+  #btn-copy-room-link {
+    padding: 3px 5px !important;
+    font-size: 0.64rem !important;
+  }
+
+  .mobile-menu-btn {
+    padding: 5px 6px !important;
+  }
 }
 
 .control-btn-leave {

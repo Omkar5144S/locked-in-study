@@ -621,6 +621,46 @@ class FirebaseManager {
     return this._filterActiveRooms(snap);
   }
 
+  // Synchronized Room Pomodoro: write timerEndAt, timerMode, isRunning to rooms/{roomId}
+  async updateRoomTimer(roomId, timerState) {
+    if (!roomId || !this.isConfigured || !this.db || !this.auth?.currentUser) return;
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    if (!cleanRoom) return;
+    try {
+      await this.db.collection('rooms').doc(cleanRoom).update({
+        timerEndAt: timerState.timerEndAt || null,
+        timerMode: String(timerState.timerMode || 'FOCUS'),
+        isRunning: !!timerState.isRunning,
+        secondsLeft: Number(timerState.secondsLeft || 0),
+        updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) {
+      console.warn('[Firebase] updateRoomTimer error:', e);
+    }
+  }
+
+  listenToRoom(roomId, callback) {
+    if (!roomId || !this.isConfigured || !this.db) return () => {};
+    const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+    let innerUnsub = null;
+    let cancelled = false;
+
+    const attach = () => {
+      if (cancelled || innerUnsub || !this.auth?.currentUser) return;
+      innerUnsub = this.db.collection('rooms').doc(cleanRoom).onSnapshot((doc) => {
+        if (doc.exists) callback(doc.data());
+      }, (err) => {
+        console.warn('[Firebase] listenToRoom error:', err);
+      });
+    };
+
+    this.waitForAuth().then(() => attach());
+    return () => {
+      cancelled = true;
+      if (innerUnsub) innerUnsub();
+    };
+  }
+
   // =========================================================
   // PEER-PAIR SIGNALING & PRESENCE ARCHITECTURE
   // =========================================================

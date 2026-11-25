@@ -466,9 +466,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const btnCopyRoomLink = document.getElementById('btn-copy-room-link');
   if (btnCopyRoomLink) {
-    btnCopyRoomLink.addEventListener('click', () => {
+    btnCopyRoomLink.addEventListener('click', async () => {
       const code = window.WebRTCRoom.roomId || 'STUDY-101';
       const inviteUrl = `https://omkar5144s.github.io/locked-in-study/?room=${encodeURIComponent(code)}`;
+
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: 'LOCKED-IN Study Room',
+            text: `Join my LOCKED-IN study room (#${code})!`,
+            url: inviteUrl
+          });
+          return;
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+        }
+      }
+
       navigator.clipboard.writeText(inviteUrl).then(() => {
         showToast('🔗 Invite Link copied!');
       }).catch(() => {
@@ -658,14 +672,33 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Push-to-Talk: Spacebar hold
+  // Push-to-Talk & Desktop Keyboard Shortcuts (Space = Pause/Resume Timer, M = Toggle Mic)
   let isSpacePressed = false;
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space' && !isSpacePressed && pttCheckbox && pttCheckbox.checked) {
-      const activeTag = document.activeElement ? document.activeElement.tagName : '';
-      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
-      isSpacePressed = true;
-      window.WebRTCRoom.muteMic(false);
+    const activeEl = document.activeElement;
+    const activeTag = activeEl ? activeEl.tagName : '';
+    if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT' || (activeEl && activeEl.isContentEditable)) return;
+
+    const studyView = document.getElementById('study-room-view');
+    const inRoom = studyView && !studyView.classList.contains('hidden');
+    if (!inRoom) return;
+
+    if (e.code === 'Space') {
+      if (pttCheckbox && pttCheckbox.checked) {
+        if (!isSpacePressed) {
+          isSpacePressed = true;
+          window.WebRTCRoom.muteMic(false);
+        }
+      } else {
+        e.preventDefault();
+        if (window.StudyTimer) {
+          if (window.StudyTimer.isRunning) window.StudyTimer.pauseTimer();
+          else window.StudyTimer.startTimer();
+        }
+      }
+    } else if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (window.WebRTCRoom) window.WebRTCRoom.toggleMic();
     }
   });
   window.addEventListener('keyup', (e) => {
@@ -674,6 +707,40 @@ document.addEventListener('DOMContentLoaded', () => {
       window.WebRTCRoom.muteMic(true);
     }
   });
+
+  // Live Focus Status Tag Cycling on Local Tile
+  const localSubjectBadge = document.getElementById('local-subject-goal');
+  const FOCUS_STATUS_TAGS = ['Deep Focus', 'Solving PYQs', '5m Break', 'Stuck / Doubt'];
+  if (localSubjectBadge) {
+    localSubjectBadge.addEventListener('click', () => {
+      const current = localSubjectBadge.textContent.trim();
+      const idx = FOCUS_STATUS_TAGS.indexOf(current);
+      const nextStatus = FOCUS_STATUS_TAGS[(idx + 1) % FOCUS_STATUS_TAGS.length];
+      localSubjectBadge.textContent = nextStatus;
+      if (window.WebRTCRoom && window.WebRTCRoom.roomId) {
+        window.WebRTCRoom.broadcastData({
+          type: 'STATUS_TAG_UPDATED',
+          statusTag: nextStatus
+        });
+      }
+      showToast(`🏷️ Status: ${nextStatus}`);
+    });
+  }
+
+  // Battery Saver Toggle (480p @ 12fps)
+  const batterySaverToggle = document.getElementById('battery-saver-toggle');
+  if (batterySaverToggle) {
+    batterySaverToggle.checked = localStorage.getItem('lockedin_battery_saver') === 'true';
+    batterySaverToggle.addEventListener('change', () => {
+      const enabled = batterySaverToggle.checked;
+      if (window.WebRTCRoom && window.WebRTCRoom.setBatterySaver) {
+        window.WebRTCRoom.setBatterySaver(enabled);
+      } else {
+        localStorage.setItem('lockedin_battery_saver', enabled ? 'true' : 'false');
+      }
+      showToast(enabled ? '🔋 Battery Saver ON (480p @ 12fps)' : '⚡ Standard Video Quality (24fps)');
+    });
+  }
 
   // 7. Zoom-Style Media & Privacy Controls
   const toggleCamBtn = document.getElementById('toggle-cam-btn');
