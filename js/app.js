@@ -430,6 +430,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (leaveBtnHeader) leaveBtnHeader.style.display = 'inline-flex';
 
     // Initialize & auto-start Study Timer so focus triggers are live immediately
+    if (window.StudyTimer.resetSessionStats) window.StudyTimer.resetSessionStats();
     window.StudyTimer.resetTimer();
     window.StudyTimer.startTimer();
 
@@ -446,19 +447,139 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Leave Room Handlers (Header & Dock)
+  // Leave Room Handlers (Header & Dock) + Shareable Session Recap ("Flex Card")
   const leaveBtnHeader = document.getElementById('btn-leave-room-header');
   const leaveBtnDock = document.getElementById('btn-leave-room-dock');
+  const recapModal = document.getElementById('session-recap-modal');
+  const closeRecapBtn = document.getElementById('btn-close-recap');
+  const recapBackdrop = document.getElementById('recap-backdrop');
+  const downloadFlexBtn = document.getElementById('btn-download-flex-card');
+  let lastSessionRecap = null;
+
+  function showSessionRecap(stats) {
+    if (!recapModal) return;
+    lastSessionRecap = stats;
+    const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setTxt('recap-user-name', stats.name);
+    setTxt('recap-pet-badge', stats.petLabel);
+    setTxt('recap-goal-text', stats.goal);
+    setTxt('recap-mins-val', `${stats.cleanMinutes}m`);
+    setTxt('recap-pomos-val', `${stats.pomodoros}`);
+    setTxt('recap-coins-val', `+${stats.coins}`);
+    recapModal.classList.remove('hidden');
+  }
+
+  if (closeRecapBtn && recapModal) closeRecapBtn.addEventListener('click', () => recapModal.classList.add('hidden'));
+  if (recapBackdrop && recapModal) recapBackdrop.addEventListener('click', () => recapModal.classList.add('hidden'));
+
+  if (downloadFlexBtn) {
+    downloadFlexBtn.addEventListener('click', async () => {
+      if (!lastSessionRecap) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = 1080;
+      canvas.height = 1350;
+      const ctx = canvas.getContext('2d');
+
+      // Background gradient
+      const bg = ctx.createLinearGradient(0, 0, 1080, 1350);
+      bg.addColorStop(0, '#0B0C0F');
+      bg.addColorStop(1, '#141926');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, 1080, 1350);
+
+      // Ambient glow
+      const glow = ctx.createRadialGradient(540, 380, 40, 540, 380, 520);
+      glow.addColorStop(0, 'rgba(48, 209, 88, 0.22)');
+      glow.addColorStop(1, 'rgba(48, 209, 88, 0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, 1080, 1350);
+
+      // Card container
+      ctx.fillStyle = 'rgba(20, 23, 31, 0.92)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(80, 160, 920, 1030, 40);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#30d158';
+      ctx.font = 'bold 34px sans-serif';
+      ctx.fillText('🔒 LOCKED-IN STUDY RECAP', 140, 260);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 58px sans-serif';
+      ctx.fillText(lastSessionRecap.name, 140, 360);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '32px sans-serif';
+      ctx.fillText(`Goal: ${lastSessionRecap.goal.slice(0, 38)}`, 140, 425);
+      ctx.fillText(`Companion: ${lastSessionRecap.petLabel}`, 140, 480);
+
+      // Stats rows
+      const drawStat = (label, val, y, color) => {
+        ctx.fillStyle = 'rgba(255,255,255,0.05)';
+        ctx.beginPath();
+        ctx.roundRect(140, y, 800, 145, 24);
+        ctx.fill();
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '28px sans-serif';
+        ctx.fillText(label, 185, y + 60);
+        ctx.fillStyle = color;
+        ctx.font = 'bold 56px monospace';
+        ctx.fillText(val, 185, y + 118);
+      };
+
+      drawStat('TOTAL CLEAN FOCUS', `${lastSessionRecap.cleanMinutes} min`, 560, '#30d158');
+      drawStat('POMODOROS COMPLETED', `${lastSessionRecap.pomodoros}`, 740, '#ffffff');
+      drawStat('COINS EARNED', `+${lastSessionRecap.coins} 🪙`, 920, '#f59e0b');
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = '26px sans-serif';
+      ctx.fillText('omkar5144s.github.io/locked-in-study', 140, 1135);
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const file = new File([blob], 'locked-in-recap.png', { type: 'image/png' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], title: 'My LOCKED-IN Study Recap' });
+            return;
+          } catch (e) {}
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'locked-in-recap.png';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        showToast('📸 Session Recap card downloaded!');
+      }, 'image/png');
+    });
+  }
+
   [leaveBtnHeader, leaveBtnDock].forEach(btn => {
     if (btn) {
       btn.addEventListener('click', () => {
         if (confirm('Leave current study room and return to the lobby?')) {
+          const petHud = document.getElementById('study-pet-hud');
+          const recapSnapshot = {
+            name: (displayNameInput && displayNameInput.value.trim()) || 'Scholar',
+            goal: (subjectGoalInput && subjectGoalInput.value.trim()) || 'Deep Focus',
+            petLabel: petHud ? petHud.textContent.trim() : '🐱 Pixel Cat',
+            cleanMinutes: window.StudyTimer ? window.StudyTimer.sessionFocusMinutes : 0,
+            pomodoros: window.StudyTimer ? window.StudyTimer.sessionPomodorosCompleted : 0,
+            coins: window.StudyTimer ? window.StudyTimer.sessionCoinsEarned : 0
+          };
           if (watermarkInterval) {
             clearInterval(watermarkInterval);
             watermarkInterval = null;
           }
           if (typeof cleanupRoomChat === 'function') cleanupRoomChat();
           window.WebRTCRoom.leaveStudyRoom();
+          if (recapSnapshot.pomodoros >= 1) {
+            showSessionRecap(recapSnapshot);
+          }
         }
       });
     }

@@ -15,9 +15,18 @@ class StudyTimerManager {
     this.timerInterval = null;
     this.isSyncedWithHost = false;
 
-    // Track zero-distraction focus block
+    // Track zero-distraction focus block & session recap stats
     this.triggersInCurrentBlock = 0;
     this.breakOverstaySeconds = 0;
+    this.sessionFocusMinutes = 0;
+    this.sessionPomodorosCompleted = 0;
+    this.sessionCoinsEarned = 0;
+  }
+
+  resetSessionStats() {
+    this.sessionFocusMinutes = 0;
+    this.sessionPomodorosCompleted = 0;
+    this.sessionCoinsEarned = 0;
   }
 
   setPreset(focusMins, breakMins) {
@@ -100,6 +109,8 @@ class StudyTimerManager {
         }
 
         if (this.secondsLeft % 60 === 0) {
+          this.sessionFocusMinutes += 1;
+          this.sessionCoinsEarned += 1;
           if (window.Leaderboard) {
             window.Leaderboard.awardCleanStudyMinute();
           }
@@ -123,12 +134,14 @@ class StudyTimerManager {
 
   handleCycleCompletion() {
     if (this.mode === 'FOCUS') {
+      this.sessionPomodorosCompleted += 1;
       // Completed Focus Block!
       if (this.triggersInCurrentBlock === 0) {
         // VICTORY TRIGGER: bonus points, coins & XP
         let rewardMsg = '+25 bonus points!';
         if (window.Leaderboard && window.Leaderboard.awardPomodoroComplete) {
           const res = window.Leaderboard.awardPomodoroComplete(this.focusDurationMinutes, this.triggersInCurrentBlock === 0);
+          this.sessionCoinsEarned += (res.coinsEarned || 0);
           rewardMsg = `+${res.coinsEarned} 🪙 Coins, +${res.xpEarned} XP!`;
           if (res.leveledUp) {
             rewardMsg += ` 🎉 LEVELED UP TO LVL ${res.newLevel}!`;
@@ -266,6 +279,11 @@ class StudyTimerManager {
     if (playBtn) {
       playBtn.textContent = this.isRunning ? '⏸️ Pause' : '▶️ Start Focus';
       playBtn.className = this.isRunning ? 'btn-timer btn-pause' : 'btn-timer btn-play';
+    }
+    const studyView = document.getElementById('study-room-view');
+    if (studyView) {
+      const glowState = !this.isRunning ? 'idle' : (this.mode === 'BREAK' ? 'break' : 'focus');
+      studyView.setAttribute('data-timer-state', glowState);
     }
   }
 
