@@ -454,6 +454,20 @@
             </div>
             <span id="settings-cloud-status-pill" class="pill-online" style="font-size:0.75rem;">Cloud Ready</span>
           </div>
+          <label style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);">
+            <div>
+              <strong style="font-size:0.88rem;">🎥 Video Quality</strong>
+              <div style="font-size:0.75rem; color:var(--text-muted);">Applies live without reconnecting the call</div>
+            </div>
+            <select id="video-quality-select" class="form-input" style="width:auto; min-width:155px; padding:6px 10px; font-size:0.84rem;">
+              <option value="auto" selected>Auto (Adaptive)</option>
+              <option value="1080p60">1080p 60fps</option>
+              <option value="720p60">720p 60fps</option>
+              <option value="540p">540p</option>
+              <option value="480p">480p</option>
+              <option value="360p">360p</option>
+            </select>
+          </label>
           <label style="display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);">
             <div>
               <strong style="font-size:0.88rem;">🔋 Battery Saver Mode</strong>
@@ -822,13 +836,13 @@
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=3.9"></script>
-  <script src="js/noise-generator.js?v=3.9"></script>
-  <script src="js/firebase-config.js?v=3.9"></script>
-  <script src="js/leaderboard.js?v=3.9"></script>
-  <script src="js/timer.js?v=3.9"></script>
-  <script src="js/webrtc-room.js?v=3.9"></script>
-  <script src="js/trigger-engine.js?v=3.9"></script>
-  <script src="js/app.js?v=3.9"></script>
+  <script src="js/soundboard-admin.js?v=4.0"></script>
+  <script src="js/noise-generator.js?v=4.0"></script>
+  <script src="js/firebase-config.js?v=4.0"></script>
+  <script src="js/leaderboard.js?v=4.0"></script>
+  <script src="js/timer.js?v=4.0"></script>
+  <script src="js/webrtc-room.js?v=4.0"></script>
+  <script src="js/trigger-engine.js?v=4.0"></script>
+  <script src="js/app.js?v=4.0"></script>
 </body>
 </html>

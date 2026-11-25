@@ -571,9 +571,12 @@ class FirebaseManager {
         ? data.lastPing.toMillis()
         : (data.updatedAt?.toMillis ? data.updatedAt.toMillis() : now);
       const count = data.activeCount !== undefined ? data.activeCount : 1;
-      const isFresh = Math.abs(now - lastPingMs) <= 180000; // 3-min window tolerates mobile clock skew
+      const isFresh = Math.abs(now - lastPingMs) <= 45000; // 45s timeout purges ghost rooms
       if (rId === 'MAIN-STUDY-HALL' || (isFresh && count > 0)) {
         rooms.push({ ...data, roomId: rId, id: rId, _lastPingMs: lastPingMs });
+      } else if (rId !== 'MAIN-STUDY-HALL' && doc.ref) {
+        // Best-effort auto-cleanup of timed-out / empty user-created rooms
+        doc.ref.delete().catch(() => {});
       }
     });
     rooms.sort((a, b) => {
@@ -701,11 +704,26 @@ class FirebaseManager {
     }
   }
 
-  async removeParticipantPresence(roomId, peerId) {
+  async removeParticipantPresence(roomId, peerId, checkDeleteRoom = false) {
     if (!roomId || !peerId || !this.isConfigured || !this.db) return;
     const cleanRoom = String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
     try {
-      await this.db.collection('rooms').doc(cleanRoom).collection('participants').doc(peerId).delete();
+      const roomRef = this.db.collection('rooms').doc(cleanRoom);
+      await roomRef.collection('participants').doc(peerId).delete();
+      if (checkDeleteRoom && cleanRoom !== 'MAIN-STUDY-HALL') {
+        const remaining = await roomRef.collection('participants').get();
+        const now = Date.now();
+        const activeRemaining = remaining.docs.filter(d => {
+          const data = d.data();
+          const lastSeenMs = data.lastSeen?.toMillis ? data.lastSeen.toMillis() : (data.joinedAt?.toMillis ? data.joinedAt.toMillis() : now);
+          return Math.abs(now - lastSeenMs) <= 45000;
+        });
+        if (activeRemaining.length === 0) {
+          await roomRef.delete().catch(async () => {
+            await roomRef.update({ activeCount: 0, participantCount: 0 }).catch(() => {});
+          });
+        }
+      }
     } catch (e) {
       console.warn('[Firebase] removeParticipantPresence error:', e);
     }
@@ -727,9 +745,11 @@ class FirebaseManager {
           const lastSeenMs = data.lastSeen?.toMillis
             ? data.lastSeen.toMillis()
             : (data.joinedAt?.toMillis ? data.joinedAt.toMillis() : now);
-          // Filter out crashed/stale ghost peers older than 2 minutes
-          if (Math.abs(now - lastSeenMs) <= 120000) {
+          // Ignore & purge crashed/stale ghost peers older than 45 seconds
+          if (Math.abs(now - lastSeenMs) <= 45000) {
             list.push(data);
+          } else if (doc.ref) {
+            doc.ref.delete().catch(() => {});
           }
         });
         callback(list);

@@ -4,6 +4,15 @@
  * Full Android ↔ PC video & screen mesh with zero black-feed race conditions.
  */
 
+const VIDEO_QUALITY_PRESETS = {
+  '1080p60': { width: 1920, height: 1080, fps: 60, maxBitrate: 3000000 },
+  '720p60':  { width: 1280, height: 720,  fps: 60, maxBitrate: 1800000 },
+  '540p':    { width: 960,  height: 540,  fps: 30, maxBitrate: 900000 },
+  '480p':    { width: 854,  height: 480,  fps: 24, maxBitrate: 600000 },
+  '360p':    { width: 640,  height: 360,  fps: 15, maxBitrate: 350000 }
+};
+const AUTO_QUALITY_TIERS = ['1080p60', '720p60', '540p', '480p', '360p'];
+
 class WebRTCRoomManager {
   constructor() {
     this.peerId = null;
@@ -47,6 +56,10 @@ class WebRTCRoomManager {
     // Subscriptions & intervals
     this.unsubscribeParticipants = null;
     this.pingInterval = null;
+    this.adaptiveQualityInterval = null;
+    this.videoQualityMode = localStorage.getItem('lockedin_video_quality') || 'auto';
+    this._autoQualityTierIndex = 1; // Starts at 720p60 in Auto mode
+    this._healthyStatsCount = 0;
   }
 
   // Generate a silent WebAudio track to guarantee SDP audio negotiations never fail
@@ -304,8 +317,8 @@ class WebRTCRoomManager {
     }
     this._unloadHandler = () => {
       if (this.roomId && this.peerId) {
-        window.FirebaseSync.removeParticipantPresence(this.roomId, this.peerId);
-        if (this.peers.size === 0) {
+        window.FirebaseSync.removeParticipantPresence(this.roomId, this.peerId, this.peers.size === 0);
+        if (this.peers.size === 0 && this.roomId !== 'MAIN-STUDY-HALL') {
           window.FirebaseSync.pingRoom(this.roomId, 0);
         }
       }
@@ -333,6 +346,11 @@ class WebRTCRoomManager {
     }
 
     this.updateGridLayout();
+    if (this.videoQualityMode === 'auto') {
+      this.startAdaptiveQualityMonitor();
+    } else {
+      this.applyVideoQualityPreset(this.videoQualityMode);
+    }
     return true;
   }
 
@@ -1018,6 +1036,125 @@ class WebRTCRoomManager {
     }
   }
 
+  async setVideoQuality(mode) {
+    const cleanMode = (mode === 'auto' || VIDEO_QUALITY_PRESETS[mode]) ? mode : 'auto';
+    this.videoQualityMode = cleanMode;
+    localStorage.setItem('lockedin_video_quality', cleanMode);
+
+    if (cleanMode === 'auto') {
+      this._autoQualityTierIndex = 1; // 720p60 starting tier
+      this._healthyStatsCount = 0;
+      await this.applyVideoQualityPreset(AUTO_QUALITY_TIERS[this._autoQualityTierIndex]);
+      if (this.roomId) this.startAdaptiveQualityMonitor();
+    } else {
+      this.stopAdaptiveQualityMonitor();
+      await this.applyVideoQualityPreset(cleanMode);
+    }
+  }
+
+  async applyVideoQualityPreset(presetKey) {
+    const preset = VIDEO_QUALITY_PRESETS[presetKey] || VIDEO_QUALITY_PRESETS['540p'];
+
+    // 1. Live camera track constraint update (no reconnect)
+    if (this.localCamStream) {
+      const vidTrack = this.localCamStream.getVideoTracks()[0];
+      if (vidTrack && vidTrack.applyConstraints) {
+        try {
+          await vidTrack.applyConstraints({
+            width: { ideal: preset.width },
+            height: { ideal: preset.height },
+            frameRate: { ideal: preset.fps, max: preset.fps }
+          });
+        } catch (err) {
+          console.warn(`[WebRTC] applyConstraints (${presetKey}) warning:`, err);
+        }
+      }
+    }
+
+    // 2. Live RTCRtpSender bitrate update on all connected peers
+    this.peers.forEach(async (peerObj) => {
+      if (!peerObj.pc) return;
+      try {
+        const videoSender = peerObj.pc.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (videoSender && videoSender.getParameters && videoSender.setParameters) {
+          const params = videoSender.getParameters();
+          if (!params.encodings || params.encodings.length === 0) {
+            params.encodings = [{}];
+          }
+          params.encodings[0].maxBitrate = preset.maxBitrate;
+          await videoSender.setParameters(params);
+        }
+      } catch (err) {
+        console.warn(`[WebRTC] setParameters (${presetKey}) warning:`, err);
+      }
+    });
+  }
+
+  startAdaptiveQualityMonitor() {
+    this.stopAdaptiveQualityMonitor();
+    this.adaptiveQualityInterval = setInterval(async () => {
+      if (this.videoQualityMode !== 'auto' || this.peers.size === 0) return;
+
+      let worstLossRate = 0;
+      let worstRtt = 0;
+      let sampled = false;
+
+      for (const peerObj of this.peers.values()) {
+        if (!peerObj.pc || typeof peerObj.pc.getStats !== 'function') continue;
+        try {
+          const stats = await peerObj.pc.getStats();
+          let packetsSent = 0;
+          let packetsLost = 0;
+          stats.forEach((report) => {
+            if (report.type === 'outbound-rtp' && report.kind === 'video') {
+              packetsSent += report.packetsSent || 0;
+            }
+            if (report.type === 'remote-inbound-rtp' && report.kind === 'video') {
+              packetsLost += Math.max(0, report.packetsLost || 0);
+              if (typeof report.roundTripTime === 'number') {
+                worstRtt = Math.max(worstRtt, report.roundTripTime);
+              }
+            }
+          });
+          if (packetsSent > 0) {
+            sampled = true;
+            worstLossRate = Math.max(worstLossRate, packetsLost / (packetsSent + packetsLost));
+          }
+        } catch (e) {}
+      }
+
+      if (!sampled) return;
+
+      if (worstLossRate > 0.05 || worstRtt > 0.35) {
+        this._healthyStatsCount = 0;
+        if (this._autoQualityTierIndex < AUTO_QUALITY_TIERS.length - 1) {
+          this._autoQualityTierIndex++;
+          const nextTier = AUTO_QUALITY_TIERS[this._autoQualityTierIndex];
+          console.log(`[WebRTC Auto] Scaling down to ${nextTier} (loss=${(worstLossRate * 100).toFixed(1)}%, rtt=${Math.round(worstRtt * 1000)}ms)`);
+          this.applyVideoQualityPreset(nextTier);
+        }
+      } else if (worstLossRate < 0.01 && worstRtt < 0.15) {
+        this._healthyStatsCount++;
+        if (this._healthyStatsCount >= 2 && this._autoQualityTierIndex > 0) {
+          this._healthyStatsCount = 0;
+          this._autoQualityTierIndex--;
+          const nextTier = AUTO_QUALITY_TIERS[this._autoQualityTierIndex];
+          console.log(`[WebRTC Auto] Network healthy — scaling up to ${nextTier}`);
+          this.applyVideoQualityPreset(nextTier);
+        }
+      } else {
+        this._healthyStatsCount = 0;
+      }
+    }, 5000);
+  }
+
+  stopAdaptiveQualityMonitor() {
+    if (this.adaptiveQualityInterval) {
+      clearInterval(this.adaptiveQualityInterval);
+      this.adaptiveQualityInterval = null;
+    }
+  }
+
   async requestWakeLock() {
     if ('wakeLock' in navigator) {
       try {
@@ -1052,6 +1189,7 @@ class WebRTCRoomManager {
   leaveStudyRoom() {
     console.log('[WebRTC] Leaving study room:', this.roomId);
     this.releaseWakeLock();
+    this.stopAdaptiveQualityMonitor();
 
     if (this.pingInterval) {
       clearInterval(this.pingInterval);

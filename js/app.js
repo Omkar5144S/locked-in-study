@@ -730,6 +730,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Video Quality Selector (Auto, 1080p 60fps, 720p 60fps, 540p, 480p, 360p)
+  const videoQualitySelect = document.getElementById('video-quality-select');
+  if (videoQualitySelect) {
+    const savedQuality = localStorage.getItem('lockedin_video_quality') || 'auto';
+    videoQualitySelect.value = savedQuality;
+    videoQualitySelect.addEventListener('change', async () => {
+      const mode = videoQualitySelect.value;
+      if (window.WebRTCRoom && window.WebRTCRoom.setVideoQuality) {
+        await window.WebRTCRoom.setVideoQuality(mode);
+      } else {
+        localStorage.setItem('lockedin_video_quality', mode);
+      }
+      showToast(`🎥 Video Quality: ${videoQualitySelect.options[videoQualitySelect.selectedIndex].text}`);
+    });
+  }
+
   // Battery Saver Toggle (480p @ 12fps)
   const batterySaverToggle = document.getElementById('battery-saver-toggle');
   if (batterySaverToggle) {
