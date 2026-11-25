@@ -439,7 +439,7 @@
   <div id="admin-studio-modal" class="modal-backdrop hidden">
     <div class="modal-window">
       <div class="modal-header">
-        <h3>⚙️ Settings &amp; Admin Studio</h3>
+        <h3 id="settings-modal-title" style="user-select:none;">⚙️ Settings</h3>
         <button id="btn-close-admin" class="drawer-close-btn">&times;</button>
       </div>
 
@@ -452,16 +452,16 @@
           </div>
           <span id="settings-cloud-status-pill" class="pill-online" style="font-size:0.75rem;">Cloud Ready</span>
         </div>
-        <!-- Admin PIN Authentication -->
-        <div id="admin-auth-view" class="admin-auth-box">
+        <!-- Admin PIN Authentication (Hidden from regular users) -->
+        <div id="admin-auth-view" class="admin-auth-box hidden">
           <h3>Admin Studio Access</h3>
-          <p>Protected studio for custom meme sound triggers and cloud configuration. Enter your private PIN to manage triggers.</p>
+          <p>Protected studio for custom meme sound triggers. Enter your private passcode to manage triggers.</p>
           
           <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:16px; margin-bottom:14px;">
             <div style="display:flex; gap:8px; justify-content:center; align-items:center;">
               <div style="position:relative; width:180px;">
-                <input type="password" id="admin-pin-input" class="form-input" style="width:100%; text-align:center; padding-right:34px;" placeholder="Enter PIN">
-                <button type="button" id="btn-toggle-pin-visibility" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:1rem;" title="Show/Hide PIN">👁️</button>
+                <input type="password" id="admin-pin-input" class="form-input" style="width:100%; text-align:center; padding-right:34px;" placeholder="Enter Passcode">
+                <button type="button" id="btn-toggle-pin-visibility" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:1rem;" title="Show/Hide Passcode">👁️</button>
               </div>
               <button id="admin-unlock-btn" class="btn-timer btn-play">Unlock</button>
             </div>
@@ -471,18 +471,12 @@
 
         <!-- Unlocked Admin Content -->
         <div id="admin-content-view" class="hidden">
-          <!-- Firebase Web Config Paste Box -->
           <div class="firebase-config-section">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div>
-                <h3>Firebase Cloud Configuration</h3>
-                <small style="color:var(--text-muted);">Paste your Firebase Web App JSON config object to enable global Firestore sync.</small>
-              </div>
-              <span id="firebase-status-pill" class="pill-local">Local Instant Mode</span>
-            </div>
-            <textarea id="firebase-config-json" class="firebase-textarea" placeholder='{ "apiKey": "...", "authDomain": "...", "projectId": "..." }'></textarea>
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-              <button id="btn-save-firebase-config" class="btn-timer btn-play">Save & Connect Cloud</button>
+              <div>
+                <h3 style="margin:0;">Admin Soundboard Controls</h3>
+                <small style="color:var(--text-muted);">Broadcast, export, or restore your 25 custom sound slots.</small>
+              </div>
               <div style="display:flex; gap:6px; flex-wrap:wrap;">
                 <button type="button" id="btn-broadcast-soundboard" class="btn-timer btn-play" style="background:var(--apple-purple); color:#fff; font-size:0.8rem; padding:6px 12px; border-radius:8px;" title="Push your custom soundboard to all members in current room">📡 Broadcast Sounds to Room</button>
                 <button type="button" id="btn-export-soundboard" class="mod-btn" title="Download JSON backup of your sound slots">💾 Export Backup</button>
@@ -490,7 +484,7 @@
                   📥 Import Backup
                   <input type="file" id="input-import-soundboard" accept=".json" style="display:none;">
                 </label>
-                <button id="btn-change-pin" class="mod-btn">Change PIN</button>
+                <button id="btn-change-pin" class="mod-btn">Change Passcode</button>
               </div>
             </div>
           </div>
@@ -818,13 +812,13 @@
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=3.5"></script>
-  <script src="js/noise-generator.js?v=3.5"></script>
-  <script src="js/firebase-config.js?v=3.5"></script>
-  <script src="js/leaderboard.js?v=3.5"></script>
-  <script src="js/timer.js?v=3.5"></script>
-  <script src="js/webrtc-room.js?v=3.5"></script>
-  <script src="js/trigger-engine.js?v=3.5"></script>
-  <script src="js/app.js?v=3.5"></script>
+  <script src="js/soundboard-admin.js?v=3.6"></script>
+  <script src="js/noise-generator.js?v=3.6"></script>
+  <script src="js/firebase-config.js?v=3.6"></script>
+  <script src="js/leaderboard.js?v=3.6"></script>
+  <script src="js/timer.js?v=3.6"></script>
+  <script src="js/webrtc-room.js?v=3.6"></script>
+  <script src="js/trigger-engine.js?v=3.6"></script>
+  <script src="js/app.js?v=3.6"></script>
 </body>
 </html>

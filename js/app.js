@@ -805,6 +805,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  const settingsModalTitle = document.getElementById('settings-modal-title');
+  let adminRevealClicks = 0;
+  let adminPromptRevealed = (urlParams.get('admin') === 'true');
+
+  if (settingsModalTitle) {
+    settingsModalTitle.addEventListener('click', () => {
+      adminRevealClicks++;
+      if (adminRevealClicks >= 5) {
+        adminPromptRevealed = true;
+        adminRevealClicks = 0;
+        if (window.Soundboard && !window.Soundboard.isAdminAuthenticated && adminAuthView) {
+          adminAuthView.classList.remove('hidden');
+        }
+      }
+    });
+  }
+
+  function isOwnerAccount() {
+    const email = window.FirebaseSync?.auth?.currentUser?.email;
+    if (!email) return false;
+    const ownerEmail = localStorage.getItem('lockedin_owner_email');
+    return !!(ownerEmail && email.toLowerCase() === ownerEmail.toLowerCase());
+  }
+
   if (openSettingsBtn && adminModal) {
     openSettingsBtn.addEventListener('click', () => {
       const settingsCloudPill = document.getElementById('settings-cloud-status-pill');
@@ -824,10 +848,14 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {
           console.warn('[Admin] Render list error:', e);
         }
-      } else {
+      } else if (adminPromptRevealed || isOwnerAccount()) {
         if (adminAuthView) adminAuthView.classList.remove('hidden');
         if (adminContentView) adminContentView.classList.add('hidden');
         if (adminPinFeedback) adminPinFeedback.textContent = '';
+      } else {
+        // Hide Admin Studio completely from regular users
+        if (adminAuthView) adminAuthView.classList.add('hidden');
+        if (adminContentView) adminContentView.classList.add('hidden');
       }
     });
   }
@@ -839,13 +867,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (adminUnlockBtn) {
-    adminUnlockBtn.addEventListener('click', () => {
+    adminUnlockBtn.addEventListener('click', async () => {
       const pin = (adminPinInput.value || '').trim();
-      if (window.Soundboard && window.Soundboard.verifyAdminPin(pin)) {
+      const ok = window.Soundboard ? await window.Soundboard.verifyAdminPin(pin) : false;
+      if (ok) {
+        if (window.FirebaseSync?.auth?.currentUser?.email) {
+          localStorage.setItem('lockedin_owner_email', window.FirebaseSync.auth.currentUser.email);
+        }
         unlockAdminStudioUI();
       } else {
         if (adminPinFeedback) {
-          adminPinFeedback.textContent = 'Incorrect PIN. Enter your password or fallback 2027.';
+          adminPinFeedback.textContent = 'Incorrect passcode.';
         }
       }
     });
@@ -973,60 +1005,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Admin Studio: Save Firebase Config Paste Box
-  const firebaseConfigTextarea = document.getElementById('firebase-config-json');
-  const saveFirebaseBtn = document.getElementById('btn-save-firebase-config');
-  const firebaseStatusPill = document.getElementById('firebase-status-pill');
-
-  if (saveFirebaseBtn && firebaseConfigTextarea) {
-    const activeCfg = window.FirebaseSync.getSavedConfig();
-    if (activeCfg) {
-      firebaseConfigTextarea.value = JSON.stringify(activeCfg, null, 2);
-    }
-    if (firebaseStatusPill && window.FirebaseSync.isConfigured) {
-      firebaseStatusPill.textContent = `Cloud Connected (${activeCfg?.projectId || 'my-study-project-c37cd'})`;
-      firebaseStatusPill.className = 'pill-online';
-    }
-
-    saveFirebaseBtn.addEventListener('click', () => {
-      const raw = firebaseConfigTextarea.value.trim();
-      if (!raw) {
-        window.FirebaseSync.saveConfig(null);
-        const defCfg = window.FirebaseSync.getSavedConfig();
-        firebaseConfigTextarea.value = JSON.stringify(defCfg, null, 2);
-        alert(`Reverted to default Cloud Firebase (${defCfg.projectId}).`);
-        return;
-      }
-
-      try {
-        const parsed = JSON.parse(raw);
-        const success = window.FirebaseSync.saveConfig(parsed);
-        if (success) {
-          alert('Firebase config saved successfully! Connected to cloud.');
-          if (firebaseStatusPill) {
-            firebaseStatusPill.textContent = `Cloud Connected (${parsed.projectId || 'custom'})`;
-            firebaseStatusPill.className = 'pill-online';
-          }
-        } else {
-          alert('Saved config. Reloading page to initialize cloud sync...');
-          window.location.reload();
-        }
-      } catch (err) {
-        alert('Invalid JSON format. Please paste a valid Firebase Web config JSON object.');
-      }
-    });
-  }
-
-  // Admin Studio: Change PIN
+  // Admin Studio: Change Passcode
   const changePinBtn = document.getElementById('btn-change-pin');
   if (changePinBtn) {
-    changePinBtn.addEventListener('click', () => {
-      const oldPin = prompt('Enter Current Admin PIN (or 2027):');
-      const newPin = prompt('Enter New Admin PIN (min 4 characters):');
-      if (window.Soundboard.changeAdminPin(oldPin, newPin)) {
-        alert('Admin PIN updated successfully.');
+    changePinBtn.addEventListener('click', async () => {
+      const oldPin = prompt('Enter Current Admin Passcode:');
+      const newPin = prompt('Enter New Admin Passcode (min 4 characters):');
+      const ok = window.Soundboard ? await window.Soundboard.changeAdminPin(oldPin, newPin) : false;
+      if (ok) {
+        alert('Admin passcode updated successfully.');
       } else {
-        alert('Failed to update PIN. Verify your current PIN and new PIN format.');
+        alert('Failed to update passcode. Verify your current passcode and new format (min 4 characters).');
       }
     });
   }

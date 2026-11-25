@@ -223,6 +223,9 @@ const TRIGGER_DEFINITIONS = [
   }
 ];
 
+// SHA-256 hash of default admin passcode (never stored as plain text)
+const DEFAULT_ADMIN_PIN_HASH = '5313e5bf17148de844ff74be3663d47c6e361ca469b30a36337701233c89a15e';
+
 class SoundboardManager {
   constructor() {
     this.audioContext = null;
@@ -231,7 +234,8 @@ class SoundboardManager {
     this.lastSoundTime = 0;
     this.cooldownMs = 8000; // 8s global cooldown
     this.isMuted = false;
-    this.adminPin = localStorage.getItem('lockedin_admin_pin') || '2027';
+    localStorage.removeItem('lockedin_admin_pin'); // Remove any legacy plain-text PIN
+    this.adminPinHash = localStorage.getItem('lockedin_admin_pin_hash') || DEFAULT_ADMIN_PIN_HASH;
     this.isAdminAuthenticated = localStorage.getItem('lockedin_admin_authenticated') === 'true';
 
     this.initAudioContext();
@@ -592,15 +596,22 @@ class SoundboardManager {
     }
   }
 
-  // Admin PIN Authentication (With Master Recovery & Case-Insensitive Matching)
-  verifyAdminPin(enteredPin) {
-    const clean = String(enteredPin || '').trim();
-    const stored = String(this.adminPin || '2027').trim();
+  async hashPin(pin) {
+    const clean = String(pin || '').trim();
+    if (!clean || !window.crypto || !window.crypto.subtle) return '';
+    const buf = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(clean));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
 
+  // Admin Passcode Authentication (SHA-256 hash verified)
+  async verifyAdminPin(enteredPin) {
+    const clean = String(enteredPin || '').trim();
     if (!clean) return false;
 
-    // Match custom stored PIN, master fallback 2027, or case-insensitive
-    if (clean === stored || clean === '2027' || clean.toLowerCase() === stored.toLowerCase()) {
+    const enteredHash = await this.hashPin(clean);
+    const storedHash = this.adminPinHash || DEFAULT_ADMIN_PIN_HASH;
+
+    if (enteredHash && (enteredHash === storedHash || enteredHash === DEFAULT_ADMIN_PIN_HASH)) {
       this.isAdminAuthenticated = true;
       localStorage.setItem('lockedin_admin_authenticated', 'true');
       return true;
@@ -609,21 +620,26 @@ class SoundboardManager {
   }
 
   resetAdminPinToDefault() {
-    this.adminPin = '2027';
-    localStorage.setItem('lockedin_admin_pin', '2027');
+    this.adminPinHash = DEFAULT_ADMIN_PIN_HASH;
+    localStorage.setItem('lockedin_admin_pin_hash', DEFAULT_ADMIN_PIN_HASH);
     this.isAdminAuthenticated = true;
     localStorage.setItem('lockedin_admin_authenticated', 'true');
     return true;
   }
 
-  changeAdminPin(oldPin, newPin) {
+  async changeAdminPin(oldPin, newPin) {
     const cleanOld = String(oldPin || '').trim();
-    const cleanStored = String(this.adminPin || '2027').trim();
     const cleanNew = String(newPin || '').trim();
+    if (cleanNew.length < 4) return false;
 
-    if ((cleanOld === cleanStored || cleanOld === '2027') && cleanNew.length >= 4) {
-      this.adminPin = cleanNew;
-      localStorage.setItem('lockedin_admin_pin', cleanNew);
+    const oldHash = await this.hashPin(cleanOld);
+    const storedHash = this.adminPinHash || DEFAULT_ADMIN_PIN_HASH;
+
+    if (oldHash && (oldHash === storedHash || oldHash === DEFAULT_ADMIN_PIN_HASH)) {
+      const newHash = await this.hashPin(cleanNew);
+      if (!newHash) return false;
+      this.adminPinHash = newHash;
+      localStorage.setItem('lockedin_admin_pin_hash', newHash);
       this.isAdminAuthenticated = true;
       localStorage.setItem('lockedin_admin_authenticated', 'true');
       return true;
