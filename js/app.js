@@ -340,8 +340,14 @@ document.addEventListener('DOMContentLoaded', () => {
     overlay.innerHTML = html;
   }
 
-  // 3. Centralized Study Session Starter
+  // 3. Centralized Study Session Starter (strictly single-flight to prevent duplicate joins on multi-tap)
+  let isJoiningSession = false;
   async function startStudySession(roomId, isPrivate = false, passcode = null) {
+    if (isJoiningSession || (window.WebRTCRoom && window.WebRTCRoom.roomId)) {
+      return;
+    }
+    isJoiningSession = true;
+
     const cleanRoom = roomId ? String(roomId).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24) : 'MAIN-STUDY-HALL';
     const displayName = (displayNameInput.value || '').trim() || 'FocusScholar';
     const subjectGoal = (subjectGoalInput.value || '').trim() || 'General Deep Study';
@@ -361,62 +367,63 @@ document.addEventListener('DOMContentLoaded', () => {
       window.Leaderboard.renderHUD();
     }
 
-    // Show loading state on all entry buttons
-    if (quickJoinPublicBtn) {
-      quickJoinPublicBtn.disabled = true;
-      quickJoinPublicBtn.textContent = '⏳ Connecting...';
-    }
-    if (joinPrivateBtn) {
-      joinPrivateBtn.disabled = true;
-      joinPrivateBtn.textContent = '⏳ Entering...';
-    }
+    // Lock ALL entry buttons immediately so rapid multi-taps cannot queue duplicate joins
+    const allJoinBtns = [
+      quickJoinPublicBtn,
+      joinPrivateBtn,
+      submitCodeArrow,
+      createHostBtn,
+      document.getElementById('btn-accept-invite'),
+      ...document.querySelectorAll('.au-join-btn')
+    ].filter(Boolean);
+    allJoinBtns.forEach(b => { b.disabled = true; });
 
-    // Initialize media with multi-tier fallback (never blocks joining!)
-    await window.WebRTCRoom.initLocalMedia({ mode: selectedMode });
+    if (quickJoinPublicBtn) quickJoinPublicBtn.textContent = '⏳ Connecting...';
+    if (joinPrivateBtn) joinPrivateBtn.textContent = '⏳ Entering...';
 
-    // Reset button states
-    if (quickJoinPublicBtn) {
-      quickJoinPublicBtn.disabled = false;
-      quickJoinPublicBtn.textContent = '⚡ Quick Matchmake';
-    }
-    if (joinPrivateBtn) {
-      joinPrivateBtn.disabled = false;
-      joinPrivateBtn.textContent = 'Enter Private Room';
-    }
-
-    // Join WebRTC room with normalized uppercase room ID
     try {
-      await window.WebRTCRoom.joinStudyRoom(cleanRoom, isPrivate, passcode);
-    } catch (joinErr) {
-      console.error('[App] Failed to join cloud study room:', joinErr);
-      showToast('❌ ' + (joinErr.message || 'Could not join study room in Cloud Firestore.'), 5000);
-      window.WebRTCRoom.leaveStudyRoom();
-      return;
+      // Initialize media with multi-tier fallback (never blocks joining!)
+      await window.WebRTCRoom.initLocalMedia({ mode: selectedMode });
+
+      // Join WebRTC room with normalized uppercase room ID
+      try {
+        await window.WebRTCRoom.joinStudyRoom(cleanRoom, isPrivate, passcode);
+      } catch (joinErr) {
+        console.error('[App] Failed to join cloud study room:', joinErr);
+        showToast('❌ ' + (joinErr.message || 'Could not join study room in Cloud Firestore.'), 5000);
+        window.WebRTCRoom.leaveStudyRoom();
+        return;
+      }
+
+      // Start Trigger Engine monitoring with active camera element
+      const localCamVideo = document.getElementById('local-cam-video');
+      const localScreenVideo = document.getElementById('local-screen-video');
+      const activeCam = (window.WebRTCRoom && window.WebRTCRoom.isDualFeedActive) ? localCamVideo : localScreenVideo;
+
+      window.TriggerEngine.startMonitoring({
+        localVideoEl: activeCam,
+        screenVideoEl: localScreenVideo,
+        localAudioStream: window.WebRTCRoom.localCamStream
+      });
+
+      // Ensure audio context is ready for meme triggers
+      if (window.Soundboard) {
+        window.Soundboard.ensureAudioResumed();
+      }
+
+      // Update Local Tile HUD
+      document.getElementById('local-user-name').textContent = displayName;
+      document.getElementById('local-subject-goal').textContent = subjectGoal;
+
+      // Switch from Lobby to Study Room
+      document.getElementById('lobby-view').classList.add('hidden');
+      document.getElementById('study-room-view').classList.remove('hidden');
+    } finally {
+      isJoiningSession = false;
+      allJoinBtns.forEach(b => { b.disabled = false; });
+      if (quickJoinPublicBtn) quickJoinPublicBtn.textContent = '⚡ Enter Main Study Hall (24/7 Community)';
+      if (joinPrivateBtn) joinPrivateBtn.textContent = 'Join Room ➔';
     }
-
-    // Start Trigger Engine monitoring with active camera element
-    const localCamVideo = document.getElementById('local-cam-video');
-    const localScreenVideo = document.getElementById('local-screen-video');
-    const activeCam = (window.WebRTCRoom && window.WebRTCRoom.isDualFeedActive) ? localCamVideo : localScreenVideo;
-
-    window.TriggerEngine.startMonitoring({
-      localVideoEl: activeCam,
-      screenVideoEl: localScreenVideo,
-      localAudioStream: window.WebRTCRoom.localCamStream
-    });
-
-    // Ensure audio context is ready for meme triggers
-    if (window.Soundboard) {
-      window.Soundboard.ensureAudioResumed();
-    }
-
-    // Update Local Tile HUD
-    document.getElementById('local-user-name').textContent = displayName;
-    document.getElementById('local-subject-goal').textContent = subjectGoal;
-
-    // Switch from Lobby to Study Room
-    document.getElementById('lobby-view').classList.add('hidden');
-    document.getElementById('study-room-view').classList.remove('hidden');
 
     // Show Leave Room button in header
     const leaveBtnHeader = document.getElementById('btn-leave-room-header');

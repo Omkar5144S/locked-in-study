@@ -300,18 +300,30 @@ class WebRTCRoomManager {
   // =========================================================
 
   async joinStudyRoom(requestedRoomId, isPrivate = false, passcode = null) {
-    // Clean, uppercase 6+ char code
-    const rawCode = requestedRoomId || 'MAIN-STUDY-HALL';
-    const cleanRoom = String(rawCode).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24) || 'STUDY-101';
-    
-    this.roomId = cleanRoom;
-    this.cleanRoom = cleanRoom;
-    this.isPrivate = isPrivate;
-    this.passcode = passcode ? String(passcode).trim() : null;
+    if (this._isJoining || this.roomId) {
+      console.warn('[WebRTC] Join already in progress or active; ignoring duplicate tap.');
+      return false;
+    }
+    this._isJoining = true;
 
-    // Unique per-tab Peer ID
-    this.peerId = 'p_' + Math.random().toString(36).substring(2, 9);
-    console.log(`[WebRTC] Joining Room: ${cleanRoom} as Peer: ${this.peerId}`);
+    try {
+      // Clean, uppercase 6+ char code
+      const rawCode = requestedRoomId || 'MAIN-STUDY-HALL';
+      const cleanRoom = String(rawCode).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24) || 'STUDY-101';
+      
+      this.roomId = cleanRoom;
+      this.cleanRoom = cleanRoom;
+      this.isPrivate = isPrivate;
+      this.passcode = passcode ? String(passcode).trim() : null;
+
+      // Stable per-tab Peer ID (prevents duplicate participant docs if re-triggered)
+      let tabPeerId = sessionStorage.getItem('lockedin_tab_peer_id');
+      if (!tabPeerId) {
+        tabPeerId = 'p_' + Math.random().toString(36).substring(2, 9);
+        sessionStorage.setItem('lockedin_tab_peer_id', tabPeerId);
+      }
+      this.peerId = tabPeerId;
+      console.log(`[WebRTC] Joining Room: ${cleanRoom} as Peer: ${this.peerId}`);
 
     // Update Room Code & Share Bar
     this.renderRoomCodeBar();
@@ -372,13 +384,16 @@ class WebRTCRoomManager {
       });
     }
 
-    this.updateGridLayout();
-    if (this.videoQualityMode === 'auto') {
-      this.startAdaptiveQualityMonitor();
-    } else {
-      this.applyVideoQualityPreset(this.videoQualityMode);
+      this.updateGridLayout();
+      if (this.videoQualityMode === 'auto') {
+        this.startAdaptiveQualityMonitor();
+      } else {
+        this.applyVideoQualityPreset(this.videoQualityMode);
+      }
+      return true;
+    } finally {
+      this._isJoining = false;
     }
-    return true;
   }
 
   renderRoomCodeBar() {
@@ -400,12 +415,27 @@ class WebRTCRoomManager {
   handleParticipantsUpdate(participants) {
     if (!Array.isArray(participants)) return;
 
+    const myUid = window.FirebaseSync?.auth?.currentUser?.uid || window.FirebaseSync?.currentUser?.uid || null;
     const activeRemoteIds = new Set();
 
+    // Deduplicate by userId so the same person never appears 3-4 times
+    const dedupedByUser = new Map();
     participants.forEach((p) => {
       const remotePeerId = p.peerId;
       if (!remotePeerId || remotePeerId === this.peerId) return;
+      if (myUid && p.userId && p.userId === myUid) return; // Never show self as a remote tile
 
+      const uidKey = p.userId || remotePeerId;
+      const existing = dedupedByUser.get(uidKey);
+      const pTime = p.lastHeartbeat?.toMillis ? p.lastHeartbeat.toMillis() : (p.lastSeen?.toMillis ? p.lastSeen.toMillis() : 0);
+      const eTime = existing ? (existing.lastHeartbeat?.toMillis ? existing.lastHeartbeat.toMillis() : (existing.lastSeen?.toMillis ? existing.lastSeen.toMillis() : 0)) : -1;
+      if (!existing || pTime >= eTime) {
+        dedupedByUser.set(uidKey, p);
+      }
+    });
+
+    dedupedByUser.forEach((p) => {
+      const remotePeerId = p.peerId;
       activeRemoteIds.add(remotePeerId);
 
       // Register remote participant on Leaderboard
