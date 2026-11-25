@@ -277,7 +277,8 @@ class WebRTCRoomManager {
     this.renderRoomCodeBar();
     this.requestWakeLock();
 
-    const callSign = localStorage.getItem('lockedin_display_name') || 'Scholar_' + this.peerId.slice(-4);
+    const callSign = window.FirebaseSync?.currentUser?.callSign || window.FirebaseSync?.currentUser?.displayName || localStorage.getItem('lockedin_display_name') || 'Scholar_' + this.peerId.slice(-4);
+    this.updateLocalAvatarDisplay(callSign);
     const isVerified = !!(window.FirebaseSync?.currentUser && !window.FirebaseSync.currentUser.isAnonymous && window.FirebaseSync.currentUser.isVerified);
 
     // 1. Write Presence to rooms/{roomId}/participants/{peerId}
@@ -731,7 +732,26 @@ class WebRTCRoomManager {
   // HARDWARE PRIVACY CONTROLS & CAMERA / SCREEN TOGGLES
   // =========================================================
 
+  updateLocalAvatarDisplay(nameOverride) {
+    const raw = nameOverride ||
+      window.FirebaseSync?.currentUser?.callSign ||
+      window.FirebaseSync?.currentUser?.displayName ||
+      localStorage.getItem('lockedin_display_name') ||
+      'Scholar';
+    const clean = String(raw).trim() || 'Scholar';
+    const parts = clean.split(/\s+/).filter(Boolean);
+    const initials = parts.length >= 2
+      ? (parts[0][0] + parts[1][0]).toUpperCase()
+      : clean.slice(0, 2).toUpperCase();
+
+    const initialsEl = document.getElementById('local-avatar-initials');
+    const nameEl = document.getElementById('local-avatar-name');
+    if (initialsEl) initialsEl.textContent = initials;
+    if (nameEl) nameEl.textContent = clean;
+  }
+
   toggleCamera() {
+    this.updateLocalAvatarDisplay();
     this.isCameraPrivacyActive = !this.isCameraPrivacyActive;
     const camBtn = document.getElementById('toggle-cam-btn');
     const avatarCard = document.getElementById('local-avatar-card');

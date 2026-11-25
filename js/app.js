@@ -545,6 +545,9 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
         if (headerUserCallsign) headerUserCallsign.textContent = label;
+        if (window.WebRTCRoom && window.WebRTCRoom.updateLocalAvatarDisplay) {
+          window.WebRTCRoom.updateLocalAvatarDisplay(label);
+        }
         if (displayNameInput && (!displayNameInput.value || displayNameInput.value.startsWith('Scholar_') || displayNameInput.value === 'FocusScholar')) {
           displayNameInput.value = label;
         }
