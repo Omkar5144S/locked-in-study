@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="vibrant">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f8fafc">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0B0C0F">
   <title>LOCKED-IN — Dual-Feed Public Study Accountability</title>
   <meta name="description" content="Hardcore public study accountability room with dual-feed WebRTC video, AI distraction detection, 25 meme sound triggers, and live leaderboards.">
   
@@ -22,12 +22,12 @@
   <meta name="twitter:image" content="https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=1200&q=80">
   <script>
     (function() {
-      const t = localStorage.getItem('lockedin_theme') || 'vibrant';
+      const t = localStorage.getItem('lockedin_theme') || 'dark';
       document.documentElement.setAttribute('data-theme', t);
       document.documentElement.style.colorScheme = (t === 'vibrant') ? 'light' : 'dark';
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=3.1">
+  <link rel="stylesheet" href="styles.css?v=3.2">
   
   <!-- PeerJS WebRTC Mesh -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -154,36 +154,37 @@
     </div>
 
     <div class="lobby-hero">
-      <h1>PUBLIC STUDY ACCOUNTABILITY</h1>
-      <p>Dual-feed WebRTC focus mesh with client-side distraction detection, meme soundboard shaming, and competitive leaderboards.</p>
+      <h1>LOCKED-IN STUDY</h1>
+      <p>2-person &amp; group focus rooms with live video, timers, and accountability.</p>
     </div>
 
     <div class="lobby-form">
-      <div class="form-group">
-        <label for="input-display-name">Your Call-Sign / Nickname</label>
-        <input type="text" id="input-display-name" class="form-input" placeholder="e.g. FocusScholar_42" maxlength="25">
+      <div class="lobby-profile-row">
+        <div class="form-group">
+          <label for="input-display-name">Call-Sign</label>
+          <input type="text" id="input-display-name" class="form-input" placeholder="e.g. FocusScholar" maxlength="25">
+        </div>
+        <div class="form-group">
+          <label for="input-subject-goal">Study Goal</label>
+          <input type="text" id="input-subject-goal" class="form-input" placeholder="e.g. Organic Chemistry" maxlength="50">
+        </div>
       </div>
 
       <div class="form-group">
-        <label for="input-subject-goal">Current Study Goal / Exam</label>
-        <input type="text" id="input-subject-goal" class="form-input" placeholder="e.g. Organic Chemistry Reactions & Calculus PSET" maxlength="50">
-      </div>
-
-      <div class="form-group">
-        <label>Accountability Camera Mode</label>
+        <label>Camera Mode</label>
         <div class="mode-selector-grid">
           <label class="mode-card">
             <input type="radio" name="setup-mode" value="dual" checked>
             <div class="mode-info">
-              <h4>🖥️ Camera + Screen Share</h4>
-              <p>Dual-feed PiP layout. Streams your screen and face simultaneously.</p>
+              <h4>🖥️ Cam + Screen</h4>
+              <p>Dual-feed PiP</p>
             </div>
           </label>
           <label class="mode-card">
             <input type="radio" name="setup-mode" value="single">
             <div class="mode-info">
-              <h4>📱 Desk Cam Only</h4>
-              <p>Best for mobile/iPad on stand facing notebook or desk.</p>
+              <h4>📱 Desk Cam</h4>
+              <p>Mobile / stand</p>
             </div>
           </label>
         </div>
@@ -356,7 +357,7 @@
         <button id="toggle-tab-blocker-btn" class="control-btn tab-blocker-active" title="Toggle Tab-Switch Blocker (8s Grace Countdown)">
           <span id="tab-blocker-label">🛡️ Tab Guard: ON</span>
         </button>
-        <button id="btn-leave-room-dock" class="control-btn" style="color:var(--apple-red); border-color:rgba(239, 68, 68, 0.4);" title="Leave Study Session">
+        <button id="btn-leave-room-dock" class="control-btn control-btn-leave" title="Leave Study Session">
           <span>🚪 Leave</span>
         </button>
       </div>

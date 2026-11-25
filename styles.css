@@ -5,17 +5,17 @@
  */
 
 :root {
-  /* Apple OLED Dark Hierarchy */
-  --bg-dark: #070709;
-  --bg-elevated: rgba(18, 18, 22, 0.75);
-  --bg-card: rgba(28, 28, 34, 0.65);
-  --bg-card-hover: rgba(38, 38, 46, 0.8);
-  --bg-input: rgba(15, 15, 18, 0.85);
+  /* Linear Dark Slate Hierarchy */
+  --bg-dark: #0B0C0F;
+  --bg-elevated: rgba(15, 17, 23, 0.92);
+  --bg-card: #14171F;
+  --bg-card-hover: #1A1E29;
+  --bg-input: #0F1117;
 
   /* Translucent Glass & Specular Highlights */
-  --glass-blur: blur(28px) saturate(190%);
-  --glass-border: 1px solid rgba(255, 255, 255, 0.09);
-  --glass-specular: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  --glass-blur: blur(22px) saturate(160%);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+  --glass-specular: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   --glass-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
 
   /* Apple System Colors (Dark Mode) */
@@ -198,10 +198,10 @@ body {
    APPLE FOCUS LOBBY
    ========================================================= */
 .lobby-container {
-  max-width: 680px;
-  margin: 32px auto;
-  padding: 36px;
-  background: var(--bg-elevated);
+  max-width: 720px;
+  margin: 18px auto;
+  padding: 22px 24px;
+  background: var(--bg-card);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border-radius: var(--radius-lg);
@@ -298,28 +298,34 @@ body {
 }
 
 .lobby-hero h1 {
-  font-size: 2.1rem;
+  font-size: 1.55rem;
   font-weight: 800;
-  letter-spacing: -0.035em;
-  background: linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.75) 100%);
+  letter-spacing: -0.03em;
+  background: linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.78) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .lobby-hero p {
   color: var(--text-secondary);
-  font-size: 0.95rem;
-  margin-bottom: 26px;
-  line-height: 1.5;
+  font-size: 0.86rem;
+  margin-bottom: 14px;
+  line-height: 1.4;
   font-weight: 400;
 }
 
 .lobby-form {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
   text-align: left;
+}
+
+.lobby-profile-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .form-group label {
@@ -847,21 +853,21 @@ body {
 /* Mobile Responsive (< 680px) */
 @media (max-width: 680px) {
   .study-grid {
-    height: auto;
-    min-height: calc(100vh - 160px);
+    flex: 1;
+    min-height: 0;
+    height: 100%;
   }
   .study-grid.grid-2-users {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr 1fr;
-    min-height: 520px;
   }
   .study-grid.grid-3-4-users {
     grid-template-columns: 1fr;
-    grid-template-rows: repeat(4, 220px);
+    grid-template-rows: repeat(4, 1fr);
   }
   .study-grid.grid-5-8-users {
     grid-template-columns: 1fr;
-    grid-auto-rows: 200px;
+    grid-auto-rows: minmax(160px, 1fr);
   }
 }
 
@@ -1138,7 +1144,7 @@ body {
   flex-wrap: wrap;
   align-content: space-around;
   justify-content: space-around;
-  opacity: 0.07;
+  opacity: 0.02;
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
@@ -1237,13 +1243,15 @@ body {
 }
 
 .subject-badge {
-  background: rgba(48, 209, 88, 0.14);
-  color: var(--apple-mint);
+  background: rgba(15, 17, 23, 0.75);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #ffffff;
   padding: 4px 10px;
   border-radius: var(--radius-pill);
   font-size: 0.72rem;
   font-weight: 600;
-  border: 1px solid rgba(48, 209, 88, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
 .listening-badge {
@@ -2171,13 +2179,27 @@ body {
   line-height: 1.35;
 }
 
+.control-btn-leave {
+  background: rgba(255, 69, 58, 0.16) !important;
+  color: #ff453a !important;
+  border-color: rgba(255, 69, 58, 0.45) !important;
+  font-weight: 700;
+}
+
 @media (max-width: 768px) {
   .quick-lobby-grid {
     grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .quick-lobby-card {
+    padding: 10px 12px;
   }
 
   .app-header {
-    padding: 8px 10px;
+    height: 52px;
+    min-height: 52px;
+    padding: 0 10px;
     gap: 6px;
     flex-wrap: nowrap;
     overflow: hidden;
@@ -2188,7 +2210,7 @@ body {
   }
 
   .app-title {
-    font-size: 0.95rem;
+    font-size: 0.92rem;
   }
 
   .room-meta-chips {
@@ -2200,6 +2222,8 @@ body {
 
   /* Compact single-row mobile header: hide secondary items into Menu drawer */
   #room-id-badge,
+  #room-count-badge,
+  #btn-leave-room-header,
   .privacy-chip,
   #btn-copy-invite,
   #user-streak-badge,
@@ -2211,8 +2235,33 @@ body {
   #btn-open-shop,
   #btn-open-doubts,
   #btn-open-leaderboard,
-  #btn-open-settings {
+  #btn-open-settings,
+  .user-profile-chip .user-callsign,
+  .user-profile-chip .user-verified-badge {
     display: none !important;
+  }
+
+  .room-code-share-bar {
+    padding: 3px 6px;
+    gap: 4px;
+    max-width: 100%;
+  }
+
+  .room-code-pill {
+    font-size: 0.68rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #btn-copy-room-code {
+    display: none !important;
+  }
+
+  #btn-copy-room-link {
+    padding: 3px 7px;
+    font-size: 0.68rem;
+    white-space: nowrap;
   }
 
   .mobile-menu-btn {
@@ -2266,31 +2315,63 @@ body {
   }
 
   .lobby-container {
-    margin: 10px;
-    padding: 18px 14px;
+    margin: 8px;
+    padding: 14px 12px;
   }
 
   .lobby-hero h1 {
-    font-size: 1.4rem;
+    font-size: 1.2rem;
+  }
+
+  .lobby-hero p {
+    font-size: 0.78rem;
+    margin-bottom: 10px;
   }
 
   .mode-selector-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .mode-card {
+    padding: 8px 10px;
+  }
+
+  .mode-info h4 {
+    font-size: 0.8rem;
+  }
+
+  .mode-info p {
+    font-size: 0.68rem;
   }
 
   .study-room-view {
-    padding: 8px;
-    gap: 10px;
+    padding: 6px;
+    gap: 6px;
+    height: calc(100dvh - 52px);
+    overflow: hidden;
   }
 
   .study-grid {
+    flex: 1;
+    min-height: 0;
+    height: 100%;
     grid-template-columns: 1fr;
-    grid-auto-rows: auto;
-    gap: 10px;
+    gap: 6px;
+  }
+
+  .study-grid.grid-1-user {
+    grid-template-rows: 1fr;
+  }
+
+  .study-grid.grid-2-users {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
   }
 
   .study-tile {
-    height: clamp(210px, 34vh, 280px);
+    height: 100%;
+    min-height: 0;
   }
 
   .pip-overlay {
@@ -2350,9 +2431,17 @@ body {
 
   .mic-voice-controls .control-btn {
     flex: 1;
-    padding: 8px 6px;
-    font-size: 0.75rem;
+    padding: 8px 4px;
+    font-size: 0.72rem;
     text-align: center;
+    white-space: nowrap;
+  }
+
+  /* 5-button mobile dock: Mic, Cam, Noise, To-Do, Leave */
+  #toggle-screen-btn,
+  #raise-hand-btn,
+  #toggle-tab-blocker-btn {
+    display: none !important;
   }
 
   .side-drawer {
@@ -2453,9 +2542,9 @@ body[data-theme="vibrant"] {
 }
 
 [data-theme="vibrant"] .subject-badge {
-  background: rgba(16, 185, 129, 0.15) !important;
-  color: #059669 !important;
-  border: 1px solid rgba(16, 185, 129, 0.3) !important;
+  background: rgba(15, 17, 23, 0.75) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
 }
 
 [data-theme="vibrant"] .lobby-container {
