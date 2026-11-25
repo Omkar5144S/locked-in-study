@@ -81,6 +81,15 @@ document.addEventListener('DOMContentLoaded', () => {
         startStudySession(cleanRoomParam, isPrivate, keyParam || null);
       });
     }
+
+    // Auto-join invited room automatically once Firebase Auth settles
+    setTimeout(() => {
+      const lobbyViewEl = document.getElementById('lobby-view');
+      if (lobbyViewEl && !lobbyViewEl.classList.contains('hidden')) {
+        showToast(`🔗 Joining room ${cleanRoomParam}...`, 2500);
+        startStudySession(cleanRoomParam, isPrivate, keyParam || null);
+      }
+    }, 500);
   }
 
   // Toast Notification System
@@ -738,6 +747,39 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Mobile Compact Menu Drawer (<=768px)
+  const mobileMenuBtn = document.getElementById('btn-mobile-menu');
+  const mobileMenuDrawer = document.getElementById('mobile-menu-drawer');
+  if (mobileMenuBtn && mobileMenuDrawer) {
+    mobileMenuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pts = document.getElementById('user-points-badge');
+      const gami = document.getElementById('user-gamification-pill');
+      const mPts = document.getElementById('mobile-menu-points');
+      const mGami = document.getElementById('mobile-menu-gamification');
+      if (pts && mPts) mPts.textContent = pts.textContent;
+      if (gami && mGami) mGami.textContent = gami.textContent;
+      mobileMenuDrawer.classList.toggle('hidden');
+    });
+
+    mobileMenuDrawer.querySelectorAll('.mobile-menu-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        const targetId = item.getAttribute('data-target');
+        const targetBtn = targetId ? document.getElementById(targetId) : null;
+        mobileMenuDrawer.classList.add('hidden');
+        if (targetBtn) targetBtn.click();
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!mobileMenuDrawer.classList.contains('hidden') &&
+          !mobileMenuDrawer.contains(e.target) &&
+          !mobileMenuBtn.contains(e.target)) {
+        mobileMenuDrawer.classList.add('hidden');
+      }
+    });
+  }
+
   // 10. Settings & Admin Soundboard Studio Modal & Auth
   const openSettingsBtn = document.getElementById('btn-open-settings') || document.getElementById('btn-open-admin');
   const closeAdminBtn = document.getElementById('btn-close-admin');
@@ -1288,9 +1330,16 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTodos();
   }
 
+  const dockTodoBtn = document.getElementById('dock-todo-btn');
+  if (dockTodoBtn && todoWidget) {
+    dockTodoBtn.addEventListener('click', () => {
+      todoWidget.classList.toggle('hidden');
+    });
+  }
+
   if (todoToggleBtn && todoWidget) {
     todoToggleBtn.addEventListener('click', () => {
-      todoWidget.classList.toggle('collapsed');
+      todoWidget.classList.add('hidden');
     });
   }
 

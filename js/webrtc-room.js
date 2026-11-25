@@ -361,6 +361,9 @@ class WebRTCRoomManager {
         });
       }
 
+      // Render remote tile immediately so both peers see each other even before video tracks arrive
+      this.renderRemoteTile(remotePeerId, p);
+
       // If we don't already have an active connection with this peer:
       if (!this.peers.has(remotePeerId)) {
         const smallerId = (this.peerId < remotePeerId) ? this.peerId : remotePeerId;
@@ -387,6 +390,7 @@ class WebRTCRoomManager {
       }
     });
 
+    this.updateGridLayout();
     this.updateRoomParticipantCount();
     this.updateGridLayout();
   }
@@ -593,6 +597,7 @@ class WebRTCRoomManager {
     }
 
     this.updateGridLayout();
+    this.updateGridLayout();
     this.updateRoomParticipantCount();
   }
 
@@ -665,6 +670,7 @@ class WebRTCRoomManager {
     const tile = document.getElementById(`tile-${remotePeerId}`);
     if (tile) tile.remove();
 
+    this.updateGridLayout();
     this.updateGridLayout();
     this.updateRoomParticipantCount();
   }
