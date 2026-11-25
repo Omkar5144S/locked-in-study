@@ -61,12 +61,20 @@ class TriggerEngine {
   }
 
   initEventListeners() {
-    // 1. Tab visibility change (TAB_SWITCH_HIDDEN)
+    // 1. Tab visibility change & window blur (TAB_SWITCH_HIDDEN)
     document.addEventListener('visibilitychange', () => {
       if (!this.isFocusActive()) return;
       if (!this.isTabBlockerEnabled) return;
       if (document.hidden) {
         this.triggerCandidate('TAB_SWITCH_HIDDEN', 'You switched browser tabs or minimized the app!');
+      }
+    });
+
+    window.addEventListener('blur', () => {
+      if (!this.isFocusActive()) return;
+      if (!this.isTabBlockerEnabled) return;
+      if (document.hidden) {
+        this.triggerCandidate('TAB_SWITCH_HIDDEN', 'Browser window lost focus!');
       }
     });
 
@@ -508,10 +516,26 @@ class TriggerEngine {
       banner.classList.add('hidden');
       banner.classList.remove('flash-amber');
     }
+    if (!this.isCurrentlyShamed) {
+      this.updateLocalTileStatus('LOCKED IN', 'status-locked');
+    }
+  }
+
+  // Immediately clear any GRACE WARNING or SHAMED overlays when timer is stopped/paused/reset
+  resetAndHideAllOverlays() {
+    this.isCurrentlyShamed = false;
+    this.shameCleanSeconds = 0;
+    this.clearGrace();
+    const localTile = document.getElementById('local-user-tile');
+    if (localTile) {
+      localTile.querySelectorAll('.shame-stamp-badge').forEach(el => el.remove());
+    }
+    this.updateLocalTileStatus('LOCKED IN', 'status-locked');
   }
 
   // Execute Punishment after Grace Expires
   executePunishment(triggerId, reasonText) {
+    if (!this.isFocusActive()) return;
     console.warn(`[TriggerEngine] EXECUTING SHAME PUNISHMENT: ${triggerId} - ${reasonText}`);
 
     // 1. Play meme sound for trigger ID

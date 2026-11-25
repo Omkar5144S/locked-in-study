@@ -50,6 +50,9 @@ class StudyTimerManager {
       clearInterval(this.timerInterval);
       this.timerInterval = null;
     }
+    if (window.TriggerEngine && window.TriggerEngine.resetAndHideAllOverlays) {
+      window.TriggerEngine.resetAndHideAllOverlays();
+    }
     this.updateControlsUI();
   }
 
@@ -59,6 +62,9 @@ class StudyTimerManager {
     this.totalSeconds = this.focusDurationMinutes * 60;
     this.secondsLeft = this.totalSeconds;
     this.triggersInCurrentBlock = 0;
+    if (window.TriggerEngine && window.TriggerEngine.resetAndHideAllOverlays) {
+      window.TriggerEngine.resetAndHideAllOverlays();
+    }
     this.renderDisplay();
     this.updateModePill();
   }
