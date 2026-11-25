@@ -257,8 +257,15 @@ class TriggerEngine {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
-      const ctx = window.Soundboard ? window.Soundboard.audioContext || new AudioCtx() : new AudioCtx();
+      if (!this._meterCtx) {
+        this._meterCtx = (window.Soundboard && window.Soundboard.audioContext) || new AudioCtx();
+      }
+      if (this._meterSource) {
+        try { this._meterSource.disconnect(); } catch (e) {}
+      }
+      const ctx = this._meterCtx;
       const source = ctx.createMediaStreamSource(stream);
+      this._meterSource = source;
       this.audioAnalyser = ctx.createAnalyser();
       this.audioAnalyser.fftSize = 256;
       source.connect(this.audioAnalyser);

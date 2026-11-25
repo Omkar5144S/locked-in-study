@@ -1445,13 +1445,17 @@ class WebRTCRoomManager {
       this._unloadHandler = null;
     }
     if (this.roomId && this.peerId) {
-      window.FirebaseSync.removeParticipantPresence(this.roomId, this.peerId);
-      if (this.peers.size === 0) {
+      window.FirebaseSync.removeParticipantPresence(this.roomId, this.peerId, this.peers.size === 0);
+      if (this.peers.size === 0 && this.roomId !== 'MAIN-STUDY-HALL') {
         window.FirebaseSync.pingRoom(this.roomId, 0);
       }
     }
 
-    // Stop tracks
+    // Stop tracks (including rawCamStream when a filter is active)
+    if (this.rawCamStream) {
+      try { this.rawCamStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      this.rawCamStream = null;
+    }
     if (this.localCamStream) {
       try { this.localCamStream.getTracks().forEach(t => t.stop()); } catch (e) {}
       this.localCamStream = null;
