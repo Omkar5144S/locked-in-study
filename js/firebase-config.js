@@ -416,16 +416,10 @@ class FirebaseManager {
 
     try {
       const userRef = this.db.collection('users').doc(uid);
-      const snap = await userRef.get();
-      if (!snap.exists) {
-        await userRef.set({
-          ...fields,
-          photoURL: (this.auth.currentUser.photoURL || '').slice(0, 500),
-          createdAt: window.firebase.firestore.FieldValue.serverTimestamp()
-        });
-      } else {
-        await userRef.update(fields);
-      }
+      await userRef.set({
+        ...fields,
+        photoURL: (this.auth.currentUser.photoURL || '').slice(0, 500)
+      }, { merge: true });
     } catch (err) {
       console.warn('[Firebase] Cloud profile update failed:', err);
     }

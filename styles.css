@@ -78,7 +78,7 @@ body {
   transform: translateZ(0);
 }
 
-.study-tile, .pip-overlay, .btn-icon-label, .btn-timer, .control-btn, .au-room-card {
+.study-tile, .pip-overlay {
   will-change: transform;
   transform: translateZ(0);
   backface-visibility: hidden;

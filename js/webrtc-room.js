@@ -62,12 +62,15 @@ class WebRTCRoomManager {
     this._healthyStatsCount = 0;
   }
 
-  // Generate a silent WebAudio track to guarantee SDP audio negotiations never fail
+  // Generate a silent WebAudio track to guarantee SDP audio negotiations never fail (reuses single AudioContext)
   createSilentAudioTrack() {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return null;
-      const ctx = new AudioCtx();
+      if (!this._silentAudioCtx) {
+        this._silentAudioCtx = new AudioCtx();
+      }
+      const ctx = this._silentAudioCtx;
       const osc = ctx.createOscillator();
       const dst = ctx.createMediaStreamDestination();
       osc.connect(dst);
@@ -264,8 +267,7 @@ class WebRTCRoomManager {
     };
 
     draw();
-    setInterval(draw, 1000);
-    return canvas.captureStream ? canvas.captureStream(10) : null;
+    return canvas.captureStream ? canvas.captureStream(1) : null;
   }
 
   // =========================================================

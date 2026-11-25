@@ -18,10 +18,15 @@ class TriggerEngine {
     this.activeGraceTrigger = null;
     this.graceSecondsRemaining = 5;
 
-    // AI Models
+    // AI Models (lazy-loaded on room entry)
     this.cocoModel = null;
     this.isAiLoading = false;
+    this._isDetectingFrame = false;
     this.aiDetectionInterval = null;
+    this._brightnessCanvas = null;
+    this._brightnessCtx = null;
+    this._screenDiffCanvas = null;
+    this._screenDiffCtx = null;
 
     // Monitoring State
     this.audioAnalyser = null;
@@ -146,16 +151,35 @@ class TriggerEngine {
     return true;
   }
 
-  // Load COCO-SSD for AI Phone Detection
+  _loadScriptOnce(src) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) {
+        resolve();
+        return;
+      }
+      const s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  // Lazy-load TFJS + COCO-SSD only when entering a study room
   async loadAiModels() {
     if (this.cocoModel || this.isAiLoading) return;
     this.isAiLoading = true;
     try {
+      if (!window.tf) {
+        await this._loadScriptOnce('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js');
+      }
+      if (!window.cocoSsd) {
+        await this._loadScriptOnce('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3');
+      }
       if (window.cocoSsd) {
         this.cocoModel = await window.cocoSsd.load();
-        console.log('[AI] TensorFlow COCO-SSD loaded for cell-phone distraction detection.');
-      } else {
-        console.log('[AI] COCO-SSD script not loaded yet; will retry on demand.');
+        console.log('[AI] TensorFlow COCO-SSD lazy-loaded for cell-phone distraction detection.');
       }
     } catch (err) {
       console.warn('[AI] COCO-SSD failed to load:', err);
@@ -288,8 +312,10 @@ class TriggerEngine {
 
   // AI Vision & Object Detection
   async runAiVisionFrame(videoEl) {
-    // 1. COCO-SSD Phone Detection
+    // 1. COCO-SSD Phone Detection (skip if previous frame still running)
     if (this.cocoModel && !this.isAiLoading) {
+      if (this._isDetectingFrame) return;
+      this._isDetectingFrame = true;
       try {
         const predictions = await this.cocoModel.detect(videoEl);
         const phone = predictions.find(p => p.class === 'cell phone' && p.score > 0.52);
@@ -336,6 +362,8 @@ class TriggerEngine {
         }
       } catch (e) {
         // AI detection frame error fallback
+      } finally {
+        this._isDetectingFrame = false;
       }
     } else {
       // Lightweight fallback when COCO-SSD is still downloading
@@ -343,15 +371,17 @@ class TriggerEngine {
     }
   }
 
-  // Canvas Fallback: Dark screen / camera covered check
+  // Canvas Fallback: Dark screen / camera covered check (reuses cached canvas)
   runCanvasBrightnessCheck(videoEl) {
     try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 64;
-      canvas.height = 48;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoEl, 0, 0, 64, 48);
-      const imgData = ctx.getImageData(0, 0, 64, 48).data;
+      if (!this._brightnessCanvas) {
+        this._brightnessCanvas = document.createElement('canvas');
+        this._brightnessCanvas.width = 64;
+        this._brightnessCanvas.height = 48;
+        this._brightnessCtx = this._brightnessCanvas.getContext('2d', { willReadFrequently: true });
+      }
+      this._brightnessCtx.drawImage(videoEl, 0, 0, 64, 48);
+      const imgData = this._brightnessCtx.getImageData(0, 0, 64, 48).data;
       let totalLuma = 0;
       for (let i = 0; i < imgData.length; i += 4) {
         totalLuma += (imgData[i] * 0.299 + imgData[i + 1] * 0.587 + imgData[i + 2] * 0.114);
@@ -364,15 +394,17 @@ class TriggerEngine {
     } catch (e) {}
   }
 
-  // Screen Frozen Idle Check (> 10m)
+  // Screen Frozen Idle Check (> 10m, reuses cached canvas)
   runScreenDiffCheck(screenVideoEl) {
     try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 40;
-      canvas.height = 25;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(screenVideoEl, 0, 0, 40, 25);
-      const data = ctx.getImageData(0, 0, 40, 25).data;
+      if (!this._screenDiffCanvas) {
+        this._screenDiffCanvas = document.createElement('canvas');
+        this._screenDiffCanvas.width = 40;
+        this._screenDiffCanvas.height = 25;
+        this._screenDiffCtx = this._screenDiffCanvas.getContext('2d', { willReadFrequently: true });
+      }
+      this._screenDiffCtx.drawImage(screenVideoEl, 0, 0, 40, 25);
+      const data = this._screenDiffCtx.getImageData(0, 0, 40, 25).data;
 
       if (!this.lastScreenFrameData) {
         this.lastScreenFrameData = data;
