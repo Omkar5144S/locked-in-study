@@ -282,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Clean 6-character uppercase code e.g. STUDY-492 OR custom room name
       let cleanId;
       if (rawTitle) {
-        cleanId = rawTitle.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 20);
+        cleanId = rawTitle.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
       } else {
         cleanId = 'STUDY-' + Math.floor(100 + Math.random() * 900);
       }
@@ -522,8 +522,11 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
         if (headerUserCallsign) headerUserCallsign.textContent = label;
-        if (displayNameInput && (!displayNameInput.value || displayNameInput.value.startsWith('Scholar_'))) {
+        if (displayNameInput && (!displayNameInput.value || displayNameInput.value.startsWith('Scholar_') || displayNameInput.value === 'FocusScholar')) {
           displayNameInput.value = label;
+        }
+        if (subjectGoalInput && user.subjectGoal && (!subjectGoalInput.value || subjectGoalInput.value === 'Organic Chemistry & Calculus')) {
+          subjectGoalInput.value = user.subjectGoal;
         }
       }
     } else {
@@ -735,15 +738,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // 10. Admin Soundboard Studio Modal & Auth
-  const openAdminBtn = document.getElementById('btn-open-admin');
-  if (openAdminBtn) {
-    if (urlParams.get('admin') === 'true') {
-      openAdminBtn.style.display = 'inline-flex';
-    } else {
-      openAdminBtn.style.display = 'none';
-    }
-  }
+  // 10. Settings & Admin Soundboard Studio Modal & Auth
+  const openSettingsBtn = document.getElementById('btn-open-settings') || document.getElementById('btn-open-admin');
   const closeAdminBtn = document.getElementById('btn-close-admin');
   const adminModal = document.getElementById('admin-studio-modal');
   const adminAuthView = document.getElementById('admin-auth-view');
@@ -767,8 +763,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  if (openAdminBtn && adminModal) {
-    openAdminBtn.addEventListener('click', () => {
+  if (openSettingsBtn && adminModal) {
+    openSettingsBtn.addEventListener('click', () => {
+      const settingsCloudPill = document.getElementById('settings-cloud-status-pill');
+      if (settingsCloudPill && window.FirebaseSync) {
+        const cfg = window.FirebaseSync.getSavedConfig();
+        const isSignedIn = !!(window.FirebaseSync.auth?.currentUser && !window.FirebaseSync.auth.currentUser.isAnonymous);
+        settingsCloudPill.textContent = window.FirebaseSync.isConfigured
+          ? (isSignedIn ? `✓ Signed In (${cfg?.projectId || 'my-study-project-c37cd'})` : `Cloud Ready (${cfg?.projectId || 'my-study-project-c37cd'})`)
+          : 'Cloud Disconnected';
+      }
       adminModal.classList.remove('hidden');
       if (window.Soundboard && window.Soundboard.isAdminAuthenticated) {
         if (adminAuthView) adminAuthView.classList.add('hidden');

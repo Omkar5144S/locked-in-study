@@ -110,8 +110,8 @@
       <button id="btn-open-leaderboard" class="btn-icon-label" title="View Top Grinders & Wall of Shame">
         <span>🏆 Boards</span>
       </button>
-      <button id="btn-open-admin" class="btn-icon-label" style="display:none;" title="Admin Soundboard Studio & Config">
-        <span>⚙️ Admin</span>
+      <button id="btn-open-settings" class="btn-icon-label" title="Settings &amp; Admin Studio">
+        <span>⚙️ Settings</span>
       </button>
     </div>
   </header>
@@ -443,11 +443,19 @@
   <div id="admin-studio-modal" class="modal-backdrop hidden">
     <div class="modal-window">
       <div class="modal-header">
-        <h3>⚙️ Admin Studio & 25-Trigger Soundboard</h3>
+        <h3>⚙️ Settings &amp; Admin Studio</h3>
         <button id="btn-close-admin" class="drawer-close-btn">&times;</button>
       </div>
 
       <div class="modal-body">
+        <!-- App Settings Overview -->
+        <div class="settings-overview-box" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:14px 16px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <strong style="font-size:0.95rem;">Account &amp; Cloud Sync</strong>
+            <div style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;">Project: <code>my-study-project-c37cd</code> • Persistent Login Enabled</div>
+          </div>
+          <span id="settings-cloud-status-pill" class="pill-online" style="font-size:0.75rem;">Cloud Ready</span>
+        </div>
         <!-- Admin PIN Authentication -->
         <div id="admin-auth-view" class="admin-auth-box">
           <h3>Admin Studio Access</h3>
@@ -814,13 +822,13 @@
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=3.3"></script>
-  <script src="js/noise-generator.js?v=3.3"></script>
-  <script src="js/firebase-config.js?v=3.3"></script>
-  <script src="js/leaderboard.js?v=3.3"></script>
-  <script src="js/timer.js?v=3.3"></script>
-  <script src="js/webrtc-room.js?v=3.3"></script>
-  <script src="js/trigger-engine.js?v=3.3"></script>
-  <script src="js/app.js?v=3.3"></script>
+  <script src="js/soundboard-admin.js?v=3.4"></script>
+  <script src="js/noise-generator.js?v=3.4"></script>
+  <script src="js/firebase-config.js?v=3.4"></script>
+  <script src="js/leaderboard.js?v=3.4"></script>
+  <script src="js/timer.js?v=3.4"></script>
+  <script src="js/webrtc-room.js?v=3.4"></script>
+  <script src="js/trigger-engine.js?v=3.4"></script>
+  <script src="js/app.js?v=3.4"></script>
 </body>
 </html>

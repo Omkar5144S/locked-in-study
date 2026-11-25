@@ -130,10 +130,10 @@ class TriggerEngine {
     const inStudyRoom = studyView && !studyView.classList.contains('hidden');
     if (!this.isActive || !inStudyRoom) return false;
 
-    // If on a scheduled break, pause accountability triggers
-    if (window.StudyTimer && window.StudyTimer.mode === 'BREAK' && window.StudyTimer.isRunning) {
-      return false;
-    }
+    // ONLY fire triggers when the Pomodoro timer is actively counting down in FOCUS mode.
+    // If idle, paused, stopped, or on a break — disable all distraction detection.
+    if (!window.StudyTimer || !window.StudyTimer.isRunning) return false;
+    if (String(window.StudyTimer.mode || '').toUpperCase() !== 'FOCUS') return false;
 
     return true;
   }
@@ -398,6 +398,7 @@ class TriggerEngine {
   // ==========================================
 
   triggerCandidate(triggerId, reasonText) {
+    if (!this.isFocusActive()) return;
     if (this.currentGraceTimer) return; // Already in grace countdown
 
     this.activeGraceTrigger = { id: triggerId, reason: reasonText };
@@ -424,6 +425,10 @@ class TriggerEngine {
     }
 
     this.currentGraceTimer = setInterval(() => {
+      if (!this.isFocusActive()) {
+        this.clearGrace();
+        return;
+      }
       this.graceSecondsRemaining--;
       if (countEl) countEl.textContent = this.graceSecondsRemaining.toString();
 

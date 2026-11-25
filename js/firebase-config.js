@@ -74,6 +74,13 @@ class FirebaseManager {
       this.db = window.firebase.firestore();
       this.isConfigured = true;
 
+      // Enforce persistent local login across page reloads, tab closes, and browser restarts
+      if (window.firebase.auth.Auth && window.firebase.auth.Auth.Persistence && window.firebase.auth.Auth.Persistence.LOCAL) {
+        this.auth.setPersistence(window.firebase.auth.Auth.Persistence.LOCAL).catch((err) => {
+          console.warn('[Firebase] setPersistence warning:', err);
+        });
+      }
+
       // Check redirect result FIRST so anonymous auto-login never races with Google redirect
       const redirectPromise = this.initRedirectResult().catch((err) => {
         console.warn('[Firebase] initRedirectResult error:', err);
@@ -87,18 +94,38 @@ class FirebaseManager {
         if (activeUser) {
           const isGoogleUser = !activeUser.isAnonymous;
           let callSign = localStorage.getItem('lockedin_display_name') || activeUser.displayName || 'Scholar_' + activeUser.uid.slice(-4);
+          let subjectGoal = localStorage.getItem('lockedin_subject_goal') || 'Organic Chemistry & Calculus';
           let photoURL = isGoogleUser ? (activeUser.photoURL || '') : '';
+          let cloudProfile = null;
+
+          // Restore cached profile from localStorage backup first
+          try {
+            const cachedRaw = localStorage.getItem('lockedin_profile_' + activeUser.uid);
+            if (cachedRaw) cloudProfile = JSON.parse(cachedRaw);
+          } catch (e) {}
 
           if (isGoogleUser && this.db) {
             try {
               const uDoc = await this.db.collection('users').doc(activeUser.uid).get();
               if (uDoc.exists) {
                 const uData = uDoc.data();
+                cloudProfile = { ...(cloudProfile || {}), ...uData };
                 if (uData.callSign) callSign = uData.callSign;
+                if (uData.subjectGoal) subjectGoal = uData.subjectGoal;
                 if (uData.photoURL) photoURL = uData.photoURL;
               }
             } catch (e) {
               console.warn('[Firebase] User profile fetch warning:', e);
+            }
+          }
+
+          if (isGoogleUser) {
+            localStorage.setItem('lockedin_display_name', callSign);
+            localStorage.setItem('lockedin_subject_goal', subjectGoal);
+            if (cloudProfile) {
+              try {
+                localStorage.setItem('lockedin_profile_' + activeUser.uid, JSON.stringify(cloudProfile));
+              } catch (e) {}
             }
           }
 
@@ -107,15 +134,29 @@ class FirebaseManager {
             isAnonymous: activeUser.isAnonymous,
             displayName: activeUser.displayName || callSign,
             callSign: callSign,
+            subjectGoal: subjectGoal,
             photoURL: photoURL,
             isVerified: isGoogleUser
           };
 
           if (window.Leaderboard && window.Leaderboard.currentUser) {
             window.Leaderboard.currentUser.uid = activeUser.uid;
-            if (isGoogleUser && activeUser.displayName && (!localStorage.getItem('lockedin_display_name') || localStorage.getItem('lockedin_display_name').startsWith('Scholar_'))) {
-              window.Leaderboard.currentUser.displayName = callSign;
+            window.Leaderboard.currentUser.displayName = callSign;
+            window.Leaderboard.currentUser.subjectGoal = subjectGoal;
+            if (cloudProfile) {
+              if (typeof cloudProfile.totalPoints === 'number') window.Leaderboard.currentUser.totalPoints = Math.max(0, cloudProfile.totalPoints);
+              if (typeof cloudProfile.cleanStudyMinutes === 'number') window.Leaderboard.currentUser.cleanStudyMinutes = cloudProfile.cleanStudyMinutes;
+              if (typeof cloudProfile.shameCount === 'number') window.Leaderboard.currentUser.shameCount = cloudProfile.shameCount;
+              if (cloudProfile.topTrigger) window.Leaderboard.currentUser.topTrigger = cloudProfile.topTrigger;
+              if (typeof cloudProfile.xp === 'number') window.Leaderboard.currentUser.xp = cloudProfile.xp;
+              if (typeof cloudProfile.coins === 'number') window.Leaderboard.currentUser.coins = cloudProfile.coins;
+              if (typeof cloudProfile.level === 'number') window.Leaderboard.currentUser.level = cloudProfile.level;
+              if (typeof cloudProfile.dailyStreak === 'number') window.Leaderboard.currentUser.dailyStreak = cloudProfile.dailyStreak;
+              if (cloudProfile.lastStudyDate) window.Leaderboard.currentUser.lastStudyDate = cloudProfile.lastStudyDate;
+              if (Array.isArray(cloudProfile.unlockedBadges)) window.Leaderboard.currentUser.unlockedBadges = cloudProfile.unlockedBadges;
             }
+            if (typeof window.Leaderboard.renderHUD === 'function') window.Leaderboard.renderHUD();
+            if (typeof window.Leaderboard.renderBoards === 'function') window.Leaderboard.renderBoards();
           }
 
           this.authListeners.forEach(cb => cb(this.currentUser));
@@ -212,6 +253,9 @@ class FirebaseManager {
   async signInWithGoogle() {
     if (!this.isConfigured || !this.auth || !window.firebase) {
       throw new Error('Firebase is not configured.');
+    }
+    if (window.firebase.auth.Auth && window.firebase.auth.Auth.Persistence && window.firebase.auth.Auth.Persistence.LOCAL) {
+      await this.auth.setPersistence(window.firebase.auth.Auth.Persistence.LOCAL);
     }
     const provider = new window.firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
