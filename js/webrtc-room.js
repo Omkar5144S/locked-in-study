@@ -384,6 +384,7 @@ class WebRTCRoomManager {
       participant: participantData,
       candidateQueue: [],
       stream: null,
+      remoteStream: new MediaStream(),
       unsubsConn: null,
       unsubsCand: null
     };
@@ -403,11 +404,16 @@ class WebRTCRoomManager {
     };
 
     // Incoming remote track binding with mobile MediaStream fallback
+    // Use a single persistent MediaStream per peer to avoid srcObject churn on each track event
+    peerObj.remoteStream = peerObj.remoteStream || new MediaStream();
     pc.ontrack = (event) => {
       console.log(`[WebRTC Caller] Track received from ${remotePeerId}:`, event.track.kind);
-      let stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
-      peerObj.stream = stream;
-      this.attachRemoteStream(remotePeerId, stream, participantData);
+      // Add track to the persistent stream (avoids black frames from srcObject re-assignment)
+      if (!peerObj.remoteStream.getTracks().find(t => t.id === event.track.id)) {
+        peerObj.remoteStream.addTrack(event.track);
+      }
+      peerObj.stream = peerObj.remoteStream;
+      this.attachRemoteStream(remotePeerId, peerObj.remoteStream, participantData);
     };
 
     // Listen for Callee's ICE candidates
@@ -448,6 +454,7 @@ class WebRTCRoomManager {
       participant: participantData,
       candidateQueue: [],
       stream: null,
+      remoteStream: new MediaStream(),
       unsubsConn: null,
       unsubsCand: null
     };
@@ -473,9 +480,13 @@ class WebRTCRoomManager {
 
         pc.ontrack = (event) => {
           console.log(`[WebRTC Callee] Track received from ${remotePeerId}:`, event.track.kind);
-          let stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
-          peerObj.stream = stream;
-          this.attachRemoteStream(remotePeerId, stream, participantData);
+          // Use a single persistent MediaStream per peer to avoid srcObject churn
+          peerObj.remoteStream = peerObj.remoteStream || new MediaStream();
+          if (!peerObj.remoteStream.getTracks().find(t => t.id === event.track.id)) {
+            peerObj.remoteStream.addTrack(event.track);
+          }
+          peerObj.stream = peerObj.remoteStream;
+          this.attachRemoteStream(remotePeerId, peerObj.remoteStream, participantData);
         };
 
         // Listen for Caller's ICE candidates
@@ -541,9 +552,13 @@ class WebRTCRoomManager {
 
     const video = tile.querySelector('.remote-video');
     if (video) {
-      video.srcObject = stream;
+      // Only reassign srcObject if it changed (prevents black-frame flicker on each track event)
+      if (video.srcObject !== stream) {
+        video.srcObject = stream;
+      }
       video.playsInline = true;
       video.autoplay = true;
+      video.muted = true; // MUST be muted for autoplay policy on mobile/Android
 
       video.play().catch(err => {
         console.warn(`[WebRTC] Remote video autoplay blocked for ${remotePeerId}:`, err);
@@ -560,9 +575,9 @@ class WebRTCRoomManager {
     if (!fallback) {
       fallback = document.createElement('button');
       fallback.className = 'autoplay-fallback-btn';
-      fallback.innerHTML = '<span>▶ Tap to view / unmute video</span>';
+      fallback.innerHTML = '<span>▶ Tap to start video</span>';
       fallback.onclick = () => {
-        video.muted = false;
+        video.muted = true; // Keep muted — required for mobile autoplay
         video.play().then(() => fallback.remove()).catch(e => console.log(e));
       };
       tile.querySelector('.video-container')?.appendChild(fallback);
@@ -586,7 +601,7 @@ class WebRTCRoomManager {
 
     tile.innerHTML = `
       <div class="video-container">
-        <video autoplay playsinline class="remote-video"></video>
+        <video autoplay playsinline muted class="remote-video"></video>
         <div class="tile-avatar-card hidden">
           <div class="avatar-circle">${this.escapeHtml(callSign.slice(0, 2).toUpperCase())}</div>
           <span class="avatar-title">${this.escapeHtml(callSign)}</span>
