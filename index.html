@@ -574,7 +574,8 @@
 
       <div class="board-tab-switcher" style="margin:0 16px;">
         <button type="button" class="audio-tab-btn active" data-audiotab="soundscapes">🎧 Soundscapes</button>
-        <button type="button" class="audio-tab-btn" data-audiotab="music">🎵 Study Music</button>
+        <button type="button" class="audio-tab-btn" data-audiotab="music">🎵 YT / YT Music</button>
+        <button type="button" class="audio-tab-btn" data-audiotab="spotify">🟢 Spotify</button>
       </div>
 
       <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
@@ -615,15 +616,21 @@
           </div>
         </div>
 
-        <!-- Tab 2: Zero-Key YouTube Study Music Search -->
+        <!-- Tab 2: Zero-Key YouTube & YT Music Search / Direct URL -->
         <div id="audio-tab-music" class="noise-panel-box hidden">
-          <h4 style="margin-bottom:4px;">🎵 Study Music Search</h4>
+          <h4 style="margin-bottom:4px;">🎵 YouTube &amp; YT Music</h4>
           <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">
-            Search songs or study mixes via YouTube IFrame API. Syncs <code>🎵 Now Playing</code> to your tile.
+            Search any song/mix or paste a YouTube / YT Music link. Syncs <code>🎵 Now Playing</code> to your tile.
           </p>
-          <div style="display:flex; gap:6px; margin-bottom:10px;">
-            <input type="text" id="input-custom-track" class="form-input" placeholder="Search song or study mix..." style="flex:1;">
-            <button type="button" id="btn-set-custom-track" class="btn-primary-action" style="padding:8px 14px; font-size:0.84rem;">Search</button>
+          <div style="display:flex; gap:6px; margin-bottom:8px;">
+            <input type="text" id="input-custom-track" class="form-input" placeholder="Search song/mix or paste YT Music link..." style="flex:1;">
+            <button type="button" id="btn-set-custom-track" class="btn-primary-action" style="padding:8px 14px; font-size:0.84rem;">Play</button>
+          </div>
+          <div class="chat-quick-chips" style="margin-bottom:10px;">
+            <button type="button" class="chat-chip-btn yt-quick-chip" data-query="lofi hip hop radio beats to relax/study to">🎧 Lofi Girl</button>
+            <button type="button" class="chat-chip-btn yt-quick-chip" data-query="classical music for studying concentration">🎹 Classical</button>
+            <button type="button" class="chat-chip-btn yt-quick-chip" data-query="indian lofi study mix">🇮🇳 Indian Lofi</button>
+            <button type="button" class="chat-chip-btn yt-quick-chip" data-query="rainy jazz coffee shop ambience">☕ Jazz Cafe</button>
           </div>
           <div id="yt-player-wrapper" class="hidden" style="margin-bottom:10px; border-radius:10px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); background:#000;">
             <div id="yt-player-container" style="width:100%; height:180px;"></div>
@@ -638,6 +645,30 @@
               <span style="font-size:0.75rem;">Vol:</span>
               <input type="range" id="yt-volume-slider" min="0" max="100" value="60" style="width:90px;">
             </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Free Spotify Embeds (Zero API Key) -->
+        <div id="audio-tab-spotify" class="noise-panel-box hidden">
+          <h4 style="margin-bottom:4px;">🟢 Spotify Study Player</h4>
+          <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">
+            Pick a curated study playlist or paste any Spotify track/playlist link.
+          </p>
+          <div style="display:flex; gap:6px; margin-bottom:8px;">
+            <input type="text" id="input-spotify-url" class="form-input" placeholder="Paste open.spotify.com/playlist/... or track link" style="flex:1;">
+            <button type="button" id="btn-load-spotify" class="btn-primary-action" style="padding:8px 14px; font-size:0.84rem;">Load</button>
+          </div>
+          <div class="chat-quick-chips" style="margin-bottom:10px;">
+            <button type="button" class="chat-chip-btn spotify-quick-chip" data-spotify="https://open.spotify.com/playlist/37i9dQZF1DWWQRwui0ExPn" data-label="Spotify: Lofi Beats">☕ Lofi Beats</button>
+            <button type="button" class="chat-chip-btn spotify-quick-chip" data-spotify="https://open.spotify.com/playlist/37i9dQZF1DWZeKCadgRdKQ" data-label="Spotify: Deep Focus">🎹 Deep Focus</button>
+            <button type="button" class="chat-chip-btn spotify-quick-chip" data-spotify="https://open.spotify.com/playlist/37i9dQZF1DX9sIqqvKsjG8" data-label="Spotify: Instrumental">🧠 Instrumental</button>
+            <button type="button" class="chat-chip-btn spotify-quick-chip" data-spotify="https://open.spotify.com/playlist/37i9dQZF1DX4sWSpwq3LiO" data-label="Spotify: Peaceful Piano">🌧️ Peaceful Piano</button>
+          </div>
+          <div id="spotify-embed-wrapper" class="hidden" style="margin-bottom:10px; border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.1);">
+            <iframe id="spotify-embed-iframe" style="border-radius:12px; display:block;" src="about:blank" width="100%" height="152" frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+          </div>
+          <div style="display:flex; justify-content:flex-end;">
+            <button type="button" id="btn-clear-spotify" class="btn-timer btn-reset" style="padding:6px 12px; font-size:0.78rem;">⏹️ Close Spotify</button>
           </div>
         </div>
       </div>
@@ -950,13 +981,13 @@
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=4.8"></script>
-  <script src="js/noise-generator.js?v=4.8"></script>
-  <script src="js/firebase-config.js?v=4.8"></script>
-  <script src="js/leaderboard.js?v=4.8"></script>
-  <script src="js/timer.js?v=4.8"></script>
-  <script src="js/webrtc-room.js?v=4.8"></script>
-  <script src="js/trigger-engine.js?v=4.8"></script>
-  <script src="js/app.js?v=4.8"></script>
+  <script src="js/soundboard-admin.js?v=4.9"></script>
+  <script src="js/noise-generator.js?v=4.9"></script>
+  <script src="js/firebase-config.js?v=4.9"></script>
+  <script src="js/leaderboard.js?v=4.9"></script>
+  <script src="js/timer.js?v=4.9"></script>
+  <script src="js/webrtc-room.js?v=4.9"></script>
+  <script src="js/trigger-engine.js?v=4.9"></script>
+  <script src="js/app.js?v=4.9"></script>
 </body>
 </html>

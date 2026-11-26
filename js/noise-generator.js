@@ -87,7 +87,25 @@ class StudyNoiseManager {
     this.isPlaying = false;
   }
 
+  stopOtherSources(except = '') {
+    if (except !== 'noise') {
+      this.stopNoise();
+    }
+    if (except !== 'youtube' && this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
+      try { this.ytPlayer.pauseVideo(); } catch (e) {}
+    }
+    if (except !== 'spotify') {
+      const iframe = document.getElementById('spotify-embed-iframe');
+      const wrapper = document.getElementById('spotify-embed-wrapper');
+      if (iframe && iframe.getAttribute('src') !== 'about:blank') {
+        iframe.setAttribute('src', 'about:blank');
+      }
+      if (wrapper) wrapper.classList.add('hidden');
+    }
+  }
+
   playSoundscape(type) {
+    this.stopOtherSources('noise');
     const binauralMap = {
       delta: { hz: 2, label: 'Delta (2Hz)' },
       theta: { hz: 6, label: 'Theta (6Hz)' },
@@ -428,14 +446,41 @@ class StudyNoiseManager {
     return this._ytApiPromise;
   }
 
+  _parseYouTubeInput(input) {
+    const clean = String(input || '').trim();
+    if (!clean) return null;
+    try {
+      if (clean.includes('youtube.com/') || clean.includes('youtu.be/')) {
+        const u = new URL(clean.startsWith('http') ? clean : `https://${clean}`);
+        const listId = u.searchParams.get('list');
+        const vidId = u.hostname.includes('youtu.be')
+          ? u.pathname.replace('/', '').slice(0, 20)
+          : u.searchParams.get('v');
+        if (listId) return { type: 'playlist', id: listId, label: 'YouTube Playlist' };
+        if (vidId) return { type: 'video', id: vidId, label: 'YouTube / YT Music' };
+      }
+    } catch (e) {}
+    return { type: 'search', query: clean, label: clean };
+  }
+
   async searchStudyMusic(query) {
-    const cleanQuery = String(query || '').trim();
-    if (!cleanQuery) return;
-    this.stopNoise();
+    const parsed = this._parseYouTubeInput(query);
+    if (!parsed) return;
+    this.stopOtherSources('youtube');
     this.currentMode = 'youtube';
 
     const wrapper = document.getElementById('yt-player-wrapper');
     if (wrapper) wrapper.classList.remove('hidden');
+
+    const loadTarget = (player) => {
+      if (parsed.type === 'video' && typeof player.loadVideoById === 'function') {
+        player.loadVideoById(parsed.id);
+      } else if (parsed.type === 'playlist' && typeof player.loadPlaylist === 'function') {
+        player.loadPlaylist({ listType: 'playlist', list: parsed.id });
+      } else if (typeof player.loadPlaylist === 'function') {
+        player.loadPlaylist({ listType: 'search', list: parsed.query });
+      }
+    };
 
     const YT = await this._ensureYouTubeApi();
     if (!this.ytPlayer) {
@@ -446,15 +491,65 @@ class StudyNoiseManager {
         events: {
           onReady: (e) => {
             e.target.setVolume(Math.round(this.volume * 100));
-            e.target.loadPlaylist({ listType: 'search', list: cleanQuery });
+            loadTarget(e.target);
           }
         }
       });
-    } else if (typeof this.ytPlayer.loadPlaylist === 'function') {
-      this.ytPlayer.loadPlaylist({ listType: 'search', list: cleanQuery });
+    } else {
+      loadTarget(this.ytPlayer);
     }
 
-    this.setNowListening(cleanQuery, true);
+    this.setNowListening(parsed.label, true);
+  }
+
+  // Free Official Spotify Embeds (Zero API Key)
+  parseSpotifyEmbedUrl(input) {
+    const clean = String(input || '').trim();
+    if (!clean) return null;
+    // Match open.spotify.com/{track|playlist|album|episode}/{id} or spotify:{type}:{id}
+    const urlMatch = clean.match(/open\.spotify\.com\/(?:intl-[a-z]+\/)?(track|playlist|album|episode)\/([a-zA-Z0-9]+)/i);
+    if (urlMatch) {
+      return {
+        type: urlMatch[1].toLowerCase(),
+        id: urlMatch[2],
+        embedUrl: `https://open.spotify.com/embed/${urlMatch[1].toLowerCase()}/${urlMatch[2]}?utm_source=generator&theme=0`
+      };
+    }
+    const uriMatch = clean.match(/^spotify:(track|playlist|album|episode):([a-zA-Z0-9]+)$/i);
+    if (uriMatch) {
+      return {
+        type: uriMatch[1].toLowerCase(),
+        id: uriMatch[2],
+        embedUrl: `https://open.spotify.com/embed/${uriMatch[1].toLowerCase()}/${uriMatch[2]}?utm_source=generator&theme=0`
+      };
+    }
+    return null;
+  }
+
+  loadSpotifyEmbed(urlOrUri, labelOverride = '') {
+    const parsed = this.parseSpotifyEmbedUrl(urlOrUri);
+    if (!parsed) return false;
+
+    this.stopOtherSources('spotify');
+    this.currentMode = 'spotify';
+
+    const wrapper = document.getElementById('spotify-embed-wrapper');
+    const iframe = document.getElementById('spotify-embed-iframe');
+    if (iframe) {
+      iframe.height = (parsed.type === 'track' || parsed.type === 'episode') ? '152' : '352';
+      iframe.setAttribute('src', parsed.embedUrl);
+    }
+    if (wrapper) wrapper.classList.remove('hidden');
+
+    const label = labelOverride || `Spotify ${parsed.type}`;
+    this.setNowListening(label, true);
+    return true;
+  }
+
+  clearSpotifyEmbed() {
+    this.stopOtherSources('');
+    this.currentMode = 'none';
+    this.setNowListening('None', true);
   }
 
   toggleYouTubePlayPause() {

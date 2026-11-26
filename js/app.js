@@ -1334,7 +1334,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Audio Drawer Tabs (Soundscapes | Study Music)
+  // Audio Drawer Tabs (Soundscapes | YT / YT Music | Spotify)
   document.querySelectorAll('.audio-tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.audio-tab-btn').forEach(b => b.classList.remove('active'));
@@ -1342,8 +1342,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const target = btn.getAttribute('data-audiotab');
       const tabSounds = document.getElementById('audio-tab-soundscapes');
       const tabMusic = document.getElementById('audio-tab-music');
+      const tabSpotify = document.getElementById('audio-tab-spotify');
       if (tabSounds) tabSounds.classList.toggle('hidden', target !== 'soundscapes');
       if (tabMusic) tabMusic.classList.toggle('hidden', target !== 'music');
+      if (tabSpotify) tabSpotify.classList.toggle('hidden', target !== 'spotify');
     });
   });
 
@@ -1434,6 +1436,65 @@ document.addEventListener('DOMContentLoaded', () => {
       if (customTrackInput) customTrackInput.value = '';
       if (window.StudyNoise && window.StudyNoise.clearStudyMusic) {
         window.StudyNoise.clearStudyMusic();
+      }
+    });
+  }
+
+  // YT / YT Music Quick Chips
+  document.querySelectorAll('.yt-quick-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const q = chip.getAttribute('data-query');
+      if (q && window.StudyNoise && window.StudyNoise.searchStudyMusic) {
+        if (customTrackInput) customTrackInput.value = q;
+        window.StudyNoise.searchStudyMusic(q);
+        showToast(`🎵 Playing: ${chip.textContent.trim()}`);
+      }
+    });
+  });
+
+  // Free Spotify Embeds Wiring
+  const spotifyInput = document.getElementById('input-spotify-url');
+  const loadSpotifyBtn = document.getElementById('btn-load-spotify');
+  const clearSpotifyBtn = document.getElementById('btn-clear-spotify');
+
+  if (loadSpotifyBtn && spotifyInput) {
+    const loadSp = () => {
+      const val = (spotifyInput.value || '').trim();
+      if (!val) {
+        showToast('Paste a Spotify track, playlist, or album link.');
+        return;
+      }
+      if (window.StudyNoise && window.StudyNoise.loadSpotifyEmbed(val)) {
+        showToast('🟢 Spotify player loaded!');
+      } else {
+        showToast('⚠️ Invalid Spotify link. Use open.spotify.com/track/... or /playlist/...');
+      }
+    };
+    loadSpotifyBtn.addEventListener('click', loadSp);
+    spotifyInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        loadSp();
+      }
+    });
+  }
+
+  document.querySelectorAll('.spotify-quick-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const url = chip.getAttribute('data-spotify');
+      const label = chip.getAttribute('data-label') || 'Spotify Study';
+      if (url && window.StudyNoise && window.StudyNoise.loadSpotifyEmbed(url, label)) {
+        if (spotifyInput) spotifyInput.value = url;
+        showToast(`🟢 ${label}`);
+      }
+    });
+  });
+
+  if (clearSpotifyBtn) {
+    clearSpotifyBtn.addEventListener('click', () => {
+      if (spotifyInput) spotifyInput.value = '';
+      if (window.StudyNoise && window.StudyNoise.clearSpotifyEmbed) {
+        window.StudyNoise.clearSpotifyEmbed();
       }
     });
   }
