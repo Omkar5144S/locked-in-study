@@ -46,8 +46,10 @@ class WebRTCRoomManager {
     this.peers = new Map();
     this.maxRoomCapacity = 8;
 
-    // Audio & Status
+    // Audio & Status (Discord-grade: release hardware mic when muted so Hi-Fi music works!)
     this.isMicMuted = true;
+    this._liveMicTrack = null;
+    this._silentAudioTrack = null;
     this.isHandRaised = false;
     this.wakeLock = null;
     this._wakeLockListener = null;
@@ -152,24 +154,20 @@ class WebRTCRoomManager {
     const maxFps = isBatterySaver ? 12 : 24;
     this.isDualFeedActive = (mode === 'dual') && !isMobile;
 
-    const audioConstraints = audioDeviceId
-      ? { deviceId: { exact: audioDeviceId }, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-      : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-
     const camConstraints = {
       video: videoDeviceId 
         ? { deviceId: { exact: videoDeviceId }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: Math.min(20, maxFps), max: maxFps } } 
         : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: Math.min(20, maxFps), max: maxFps } },
-      audio: audioConstraints
+      audio: false // Do NOT lock OS mic hardware on join — keeps Spotify/YT Music in Hi-Fi stereo!
     };
 
-    // 1. Attempt standard camera + mic
+    // 1. Attempt video-only capture (mic is acquired on-demand only when unmuted)
     try {
       this.localCamStream = await navigator.mediaDevices.getUserMedia(camConstraints);
     } catch (e1) {
-      console.warn('[WebRTC] Exact getUserMedia failed. Trying video-only fallback...', e1);
+      console.warn('[WebRTC] Exact getUserMedia failed. Trying basic video fallback...', e1);
       try {
-        this.localCamStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+        this.localCamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       } catch (e2) {
         console.warn('[WebRTC] Camera unavailable. Starting in synthetic canvas standby mode...', e2);
         const name = localStorage.getItem('lockedin_display_name') || 'Scholar';
@@ -177,11 +175,12 @@ class WebRTCRoomManager {
       }
     }
 
+    this._setAudioSessionMode('playback');
     this.ensureAudioTrack(this.localCamStream);
     const initVidTrack = this.localCamStream && this.localCamStream.getVideoTracks()[0];
     if (initVidTrack && 'contentHint' in initVidTrack) initVidTrack.contentHint = 'motion';
     this.rawCamStream = this.localCamStream;
-    this.muteMic(true);
+    this._updateMicButtonUI(true);
 
     // Apply saved camera background filter if enabled
     if (this.activeVideoFilter && this.activeVideoFilter !== 'none') {
@@ -700,6 +699,24 @@ class WebRTCRoomManager {
       });
     }
 
+    // Play remote audio track via dedicated <audio> element (keeps video muted for autoplay reliability)
+    const audioEl = tile.querySelector('.remote-audio');
+    if (audioEl && stream.getAudioTracks().length > 0) {
+      const audioStream = new MediaStream(stream.getAudioTracks());
+      if (audioEl.srcObject !== audioStream) {
+        audioEl.srcObject = audioStream;
+      }
+      audioEl.play().catch(() => {
+        const unlockRemoteAudio = () => {
+          audioEl.play().catch(() => {});
+          document.removeEventListener('click', unlockRemoteAudio);
+          document.removeEventListener('touchstart', unlockRemoteAudio);
+        };
+        document.addEventListener('click', unlockRemoteAudio, { once: true, passive: true });
+        document.addEventListener('touchstart', unlockRemoteAudio, { once: true, passive: true });
+      });
+    }
+
     this.updateGridLayout();
     this.updateGridLayout();
     this.updateRoomParticipantCount();
@@ -737,6 +754,7 @@ class WebRTCRoomManager {
     tile.innerHTML = `
       <div class="video-container">
         <video autoplay playsinline muted class="remote-video"></video>
+        <audio autoplay playsinline class="remote-audio"></audio>
         <div class="tile-avatar-card hidden">
           <div class="avatar-circle">${this.escapeHtml(callSign.slice(0, 2).toUpperCase())}</div>
           <span class="avatar-title">${this.escapeHtml(callSign)}</span>
@@ -998,12 +1016,31 @@ class WebRTCRoomManager {
     }
   }
 
-  muteMic(shouldMute) {
-    this.isMicMuted = shouldMute;
-    if (this.localCamStream) {
-      const audioTracks = this.localCamStream.getAudioTracks();
-      audioTracks.forEach(t => t.enabled = !shouldMute);
-    }
+  _setAudioSessionMode(type) {
+    try {
+      if (navigator.audioSession && 'type' in navigator.audioSession) {
+        navigator.audioSession.type = type; // 'playback' for Hi-Fi music, 'play-and-record' when unmuted
+      }
+    } catch (e) {}
+  }
+
+  _replaceOutgoingAudioTrack(newTrack) {
+    if (!newTrack) return;
+    this.peers.forEach((peerObj) => {
+      if (peerObj.pc) {
+        try {
+          const audioSender = peerObj.pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+          if (audioSender) {
+            audioSender.replaceTrack(newTrack).catch(err => {
+              console.warn('[WebRTC] audio replaceTrack error:', err);
+            });
+          }
+        } catch (e) {}
+      }
+    });
+  }
+
+  _updateMicButtonUI(shouldMute) {
     const micBtn = document.getElementById('toggle-mic-btn');
     if (micBtn) {
       if (shouldMute) {
@@ -1012,6 +1049,47 @@ class WebRTCRoomManager {
       } else {
         micBtn.innerHTML = '<span>🎤 Mic</span>';
         micBtn.className = 'control-btn mic-active';
+      }
+    }
+  }
+
+  async muteMic(shouldMute) {
+    this.isMicMuted = shouldMute;
+    this._updateMicButtonUI(shouldMute);
+
+    if (shouldMute) {
+      // Stop hardware mic completely so mobile/Bluetooth returns to Hi-Fi Stereo Media mode!
+      if (this._liveMicTrack) {
+        try { this._liveMicTrack.stop(); } catch (e) {}
+        this._liveMicTrack = null;
+      }
+      if (!this._silentAudioTrack || this._silentAudioTrack.readyState === 'ended') {
+        this._silentAudioTrack = this.createSilentAudioTrack();
+      }
+      if (this._silentAudioTrack) {
+        this._replaceOutgoingAudioTrack(this._silentAudioTrack);
+      }
+      this._setAudioSessionMode('playback');
+    } else {
+      // Acquire hardware mic on-demand only while unmuted
+      this._setAudioSessionMode('play-and-record');
+      try {
+        if (!this._liveMicTrack || this._liveMicTrack.readyState === 'ended') {
+          const micStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            video: false
+          });
+          this._liveMicTrack = micStream.getAudioTracks()[0] || null;
+        }
+        if (this._liveMicTrack) {
+          this._liveMicTrack.enabled = true;
+          this._replaceOutgoingAudioTrack(this._liveMicTrack);
+        }
+      } catch (err) {
+        console.warn('[WebRTC] Mic unmute failed:', err);
+        this.isMicMuted = true;
+        this._updateMicButtonUI(true);
+        this._setAudioSessionMode('playback');
       }
     }
   }
@@ -1506,7 +1584,12 @@ class WebRTCRoomManager {
       }
     }
 
-    // Stop tracks (including rawCamStream when a filter is active)
+    // Stop tracks (including rawCamStream & liveMicTrack)
+    if (this._liveMicTrack) {
+      try { this._liveMicTrack.stop(); } catch (e) {}
+      this._liveMicTrack = null;
+    }
+    this._setAudioSessionMode('playback');
     if (this.rawCamStream) {
       try { this.rawCamStream.getTracks().forEach(t => t.stop()); } catch (e) {}
       this.rawCamStream = null;
