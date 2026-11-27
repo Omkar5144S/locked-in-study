@@ -265,6 +265,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (joinPrivateBtn) joinPrivateBtn.addEventListener('click', handlePrivateJoin);
   if (submitCodeArrow) submitCodeArrow.addEventListener('click', handlePrivateJoin);
+  [privateRoomInput, privatePasscodeInput].forEach((inp) => {
+    if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') handlePrivateJoin(); });
+  });
 
   // Host / Create Room Button
   const hostTimerBtns = document.querySelectorAll('.host-timer-btn');
@@ -1120,7 +1123,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const cfg = window.FirebaseSync.getSavedConfig();
         const isSignedIn = !!(window.FirebaseSync.auth?.currentUser && !window.FirebaseSync.auth.currentUser.isAnonymous);
         settingsCloudPill.textContent = window.FirebaseSync.isConfigured
-          ? (isSignedIn ? `✓ Signed In (${cfg?.projectId || 'my-study-project-c37cd'})` : `Cloud Ready (${cfg?.projectId || 'my-study-project-c37cd'})`)
+          ? (isSignedIn ? '✓ Signed In (Cloud Synced)' : 'Cloud Ready')
           : 'Cloud Disconnected';
       }
       adminModal.classList.remove('hidden');

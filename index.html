@@ -32,7 +32,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=4.0">
+  <link rel="stylesheet" href="styles.css?v=5.0">
 
   <!-- Firebase Web SDK v10 (Compat CDN for zero-build static hosting) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -216,7 +216,7 @@
               <button type="button" class="preset-btn host-timer-btn" data-focus="60" data-break="15">60/15m</button>
               <button type="button" class="preset-btn host-timer-btn" data-focus="90" data-break="15">90/15m</button>
             </div>
-            <button type="button" id="btn-create-host-room" class="btn-primary-action au-action-btn" style="background: linear-gradient(135deg, #f59e0b, #d97706);">🚀 Create Study Room</button>
+            <button type="button" id="btn-create-host-room" class="btn-primary-action au-action-btn">🚀 Create Study Room</button>
           </div>
 
           <!-- Action 2: Join by Code -->
@@ -225,7 +225,6 @@
             <p class="quick-lobby-sub">Enter your friend's room code or open their <code>?room=CODE</code> invite link.</p>
             <div class="au-input-row" style="margin-bottom:8px;">
               <input type="text" id="input-private-room" class="form-input au-code-input" placeholder="e.g. STUDY-492" maxlength="24">
-              <button type="button" id="btn-submit-code-arrow" class="au-arrow-btn" title="Enter">➔</button>
             </div>
             <input type="password" id="input-private-passcode" class="form-input" placeholder="Passcode (optional)" style="margin-bottom:10px;">
             <button type="button" id="btn-join-private" class="btn-primary-action btn-private-action au-action-btn">Join Room ➔</button>
@@ -491,7 +490,7 @@
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
             <div>
               <strong style="font-size:0.95rem;">Account &amp; Cloud Sync</strong>
-              <div style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;">Project: <code>my-study-project-c37cd</code> • Persistent Login Enabled</div>
+              <div style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;">Cloud Sync Active • Persistent Login Enabled</div>
             </div>
             <span id="settings-cloud-status-pill" class="pill-online" style="font-size:0.75rem;">Cloud Ready</span>
           </div>
@@ -1036,13 +1035,13 @@
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=5.3"></script>
-  <script src="js/noise-generator.js?v=5.3"></script>
-  <script src="js/firebase-config.js?v=5.3"></script>
-  <script src="js/leaderboard.js?v=5.3"></script>
-  <script src="js/timer.js?v=5.3"></script>
-  <script src="js/webrtc-room.js?v=5.3"></script>
-  <script src="js/trigger-engine.js?v=5.3"></script>
-  <script src="js/app.js?v=5.3"></script>
+  <script src="js/soundboard-admin.js?v=5.4"></script>
+  <script src="js/noise-generator.js?v=5.4"></script>
+  <script src="js/firebase-config.js?v=5.4"></script>
+  <script src="js/leaderboard.js?v=5.4"></script>
+  <script src="js/timer.js?v=5.4"></script>
+  <script src="js/webrtc-room.js?v=5.4"></script>
+  <script src="js/trigger-engine.js?v=5.4"></script>
+  <script src="js/app.js?v=5.4"></script>
 </body>
 </html>
