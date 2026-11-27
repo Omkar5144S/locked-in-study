@@ -1632,6 +1632,10 @@ document.addEventListener('DOMContentLoaded', () => {
       todoProgressCount.textContent = `${doneCount}/${total}`;
       todoProgressCount.style.color = (doneCount === total && total > 0) ? 'var(--apple-green)' : 'inherit';
     }
+    const todoBarFill = document.getElementById('todo-progress-bar-fill');
+    if (todoBarFill) {
+      todoBarFill.style.width = total > 0 ? `${Math.round((doneCount / total) * 100)}%` : '0%';
+    }
 
     if (sessionTodos.length === 0) {
       todoList.innerHTML = '<li style="font-size:0.75rem; color:var(--text-muted); text-align:center; padding:8px;">No tasks added for this study block.</li>';
@@ -1732,14 +1736,23 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const myUid = window.FirebaseSync?.auth?.currentUser?.uid || window.Leaderboard?.currentUser?.uid || '';
+    const myName = (displayNameInput && displayNameInput.value.trim()) || 'Scholar';
+
     roomChatMessagesEl.innerHTML = '';
     messages.forEach((m) => {
+      const isSelf = (myUid && m.uid === myUid) || (!m.uid && m.senderName === myName);
       const div = document.createElement('div');
-      div.className = 'chat-msg-item';
+      div.className = `chat-msg-item ${isSelf ? 'is-self' : ''}`;
+      const authorName = m.senderName || 'Scholar';
+      const initial = authorName.slice(0, 1).toUpperCase();
       const timeStr = m.clientTs ? new Date(m.clientTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
       div.innerHTML = `
         <div class="chat-msg-meta">
-          <strong>${escapeHtml(m.senderName || 'Scholar')}</strong>
+          <span class="chat-msg-author">
+            <span class="chat-msg-avatar">${escapeHtml(initial)}</span>
+            <span>${escapeHtml(isSelf ? 'You' : authorName)}</span>
+          </span>
           <span>${escapeHtml(timeStr)}</span>
         </div>
         <div>${escapeHtml(m.text)}</div>
@@ -1815,6 +1828,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (msg) sendChatText(msg);
     });
   });
+
+  const clearDoneTodosBtn = document.getElementById('btn-clear-done-todos');
+  if (clearDoneTodosBtn) {
+    clearDoneTodosBtn.addEventListener('click', () => {
+      sessionTodos = sessionTodos.filter(t => !t.done);
+      saveTodos();
+      renderTodos();
+    });
+  }
 
   if (addTodoBtn) {
     addTodoBtn.addEventListener('click', addTodoItem);
@@ -1926,6 +1948,69 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         };
       }
+    });
+
+    // Update Special / Frame buttons
+    document.querySelectorAll('#shop-tab-special .shop-card[data-item]').forEach(card => {
+      const id = card.dataset.item;
+      const type = card.dataset.type || 'frames';
+      const btn = card.querySelector('.shop-action-btn');
+      if (!btn) return;
+      const isOwned = inv[type] && inv[type].includes(id);
+      if (isOwned) {
+        btn.className = 'shop-action-btn owned-btn';
+        btn.textContent = 'Owned ✓';
+        btn.onclick = null;
+      } else {
+        btn.className = 'shop-action-btn buy-btn';
+        btn.textContent = 'Buy';
+        btn.onclick = () => {
+          const cost = parseInt(card.dataset.cost, 10);
+          if (window.Leaderboard.buyItem(type, id, cost)) {
+            updateShopUI();
+            showToast(`Unlocked: ${card.querySelector('h4').textContent}! ✨`);
+          } else {
+            showToast('⚠️ Not enough coins!');
+          }
+        };
+      }
+    });
+
+    // Daily Sign-In Bonus state
+    const dailyBtn = document.getElementById('btn-claim-daily-bonus');
+    if (dailyBtn) {
+      const todayKey = new Date().toISOString().split('T')[0];
+      const claimedToday = localStorage.getItem('lockedin_last_daily_claim') === todayKey;
+      dailyBtn.disabled = claimedToday;
+      dailyBtn.textContent = claimedToday ? '✓ Claimed Today' : 'Claim +25 🪙';
+      dailyBtn.style.opacity = claimedToday ? '0.6' : '1';
+    }
+  }
+
+  const claimDailyBtn = document.getElementById('btn-claim-daily-bonus');
+  if (claimDailyBtn) {
+    claimDailyBtn.addEventListener('click', () => {
+      const todayKey = new Date().toISOString().split('T')[0];
+      if (localStorage.getItem('lockedin_last_daily_claim') === todayKey) return;
+      localStorage.setItem('lockedin_last_daily_claim', todayKey);
+      if (window.Leaderboard && window.Leaderboard.currentUser) {
+        window.Leaderboard.currentUser.coins = (window.Leaderboard.currentUser.coins || 0) + 25;
+        window.Leaderboard.saveCurrentUser();
+        window.Leaderboard.renderHUD();
+      }
+      updateShopUI();
+      showToast('🎁 +25 Coins Daily Sign-In Bonus claimed!');
+    });
+  }
+
+  const refreshStoreBtn = document.getElementById('btn-refresh-store');
+  if (refreshStoreBtn) {
+    refreshStoreBtn.addEventListener('click', () => {
+      if (window.Leaderboard) {
+        window.Leaderboard.renderHUD();
+      }
+      updateShopUI();
+      showToast('🔄 Store refreshed!');
     });
   }
 
