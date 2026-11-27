@@ -257,6 +257,19 @@ class StudyTimerManager {
       timerDisplay.textContent = formatted;
     }
 
+    // Update Circular Boss-Battle Focus Ring (Boss HP drains 100% -> 0%)
+    const ringEl = document.getElementById('boss-ring-progress');
+    const hpEl = document.getElementById('boss-ring-hp');
+    if (ringEl && hpEl) {
+      const total = Math.max(1, this.totalSeconds || (this.focusDurationMinutes * 60));
+      const ratio = Math.max(0, Math.min(1, this.secondsLeft / total));
+      const circumference = 113.1; // 2 * Math.PI * 18
+      ringEl.style.strokeDashoffset = (circumference * (1 - ratio)).toFixed(2);
+      const hpPct = Math.round(ratio * 100);
+      hpEl.textContent = this.mode === 'BREAK' ? '☕' : `${hpPct}%`;
+      ringEl.style.stroke = this.mode === 'BREAK' ? '#38bdf8' : 'var(--accent)';
+    }
+
     // Update document title for background visibility
     document.title = `(${formatted}) LOCKED-IN Study`;
   }

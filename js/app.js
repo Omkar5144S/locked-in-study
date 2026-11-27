@@ -1769,10 +1769,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  const recentChatTimestamps = [];
   async function sendChatText(text) {
     const clean = String(text || '').trim().slice(0, 200);
     const roomId = window.WebRTCRoom && window.WebRTCRoom.roomId;
     if (!clean || !roomId || !window.FirebaseSync?.sendRoomMessage) return;
+
+    // Anti-distraction chat nudge if chatting too much during an active Focus timer
+    if (window.StudyTimer && window.StudyTimer.isRunning && String(window.StudyTimer.mode).toUpperCase() === 'FOCUS') {
+      const now = Date.now();
+      recentChatTimestamps.push(now);
+      while (recentChatTimestamps.length && now - recentChatTimestamps[0] > 60000) {
+        recentChatTimestamps.shift();
+      }
+      if (recentChatTimestamps.length >= 5) {
+        recentChatTimestamps.length = 0;
+        showToast('🎯 Focus on your studies right now. Don\'t chat that much.', 4500);
+      }
+    }
+
     try {
       await window.FirebaseSync.sendRoomMessage(roomId, clean, (displayNameInput && displayNameInput.value) || 'Scholar');
     } catch (err) {

@@ -32,7 +32,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=3.9">
+  <link rel="stylesheet" href="styles.css?v=4.0">
 
   <!-- Firebase Web SDK v10 (Compat CDN for zero-build static hosting) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -312,7 +312,16 @@
             <button id="btn-pip-swap" class="mod-btn" style="pointer-events:auto;" title="Swap PiP feeds">🔄 Swap</button>
           </div>
           <div class="hud-bottom">
-            <div id="local-timer-display" class="timer-display">25:00</div>
+            <div class="boss-timer-wrap" title="Focus Boss HP — drains as you stay locked in">
+              <div class="boss-ring-box">
+                <svg class="boss-ring-svg" viewBox="0 0 44 44">
+                  <circle class="boss-ring-bg" cx="22" cy="22" r="18"></circle>
+                  <circle id="boss-ring-progress" class="boss-ring-progress" cx="22" cy="22" r="18"></circle>
+                </svg>
+                <span id="boss-ring-hp" class="boss-ring-hp">100%</span>
+              </div>
+              <div id="local-timer-display" class="timer-display">25:00</div>
+            </div>
             <span class="status-pill status-locked">LOCKED IN</span>
             <span id="local-hand-indicator" class="hand-indicator hidden">✋ Hand Raised</span>
           </div>
@@ -1027,13 +1036,13 @@
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=5.2"></script>
-  <script src="js/noise-generator.js?v=5.2"></script>
-  <script src="js/firebase-config.js?v=5.2"></script>
-  <script src="js/leaderboard.js?v=5.2"></script>
-  <script src="js/timer.js?v=5.2"></script>
-  <script src="js/webrtc-room.js?v=5.2"></script>
-  <script src="js/trigger-engine.js?v=5.2"></script>
-  <script src="js/app.js?v=5.2"></script>
+  <script src="js/soundboard-admin.js?v=5.3"></script>
+  <script src="js/noise-generator.js?v=5.3"></script>
+  <script src="js/firebase-config.js?v=5.3"></script>
+  <script src="js/leaderboard.js?v=5.3"></script>
+  <script src="js/timer.js?v=5.3"></script>
+  <script src="js/webrtc-room.js?v=5.3"></script>
+  <script src="js/trigger-engine.js?v=5.3"></script>
+  <script src="js/app.js?v=5.3"></script>
 </body>
 </html>
