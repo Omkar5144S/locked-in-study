@@ -32,7 +32,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=3.7">
+  <link rel="stylesheet" href="styles.css?v=3.8">
 
   <!-- Firebase Web SDK v10 (Compat CDN for zero-build static hosting) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -53,7 +53,7 @@
     <div class="room-meta-chips">
       <span id="room-id-badge" class="chip-badge">Lobby</span>
       <span id="room-count-badge" class="chip-badge live-active-badge">🟢 1 Active</span>
-      <span class="chip-badge privacy-chip" title="Hardware kill-switches & Anti-Leak Dynamic Watermark active">🛡️ Anti-Leak Protected</span>
+      <span class="chip-badge privacy-chip" style="display:none;" title="Hardware kill-switches & Anti-Leak Dynamic Watermark active">🛡️ Anti-Leak Protected</span>
       
       <!-- Prominent Room Code & Share Bar (Always visible inside active room) -->
       <div id="room-code-share-bar" class="room-code-share-bar hidden">
@@ -68,7 +68,7 @@
         </button>
       </div>
 
-      <button id="btn-copy-invite" class="btn-icon-label" title="Copy shareable room link">
+      <button id="btn-copy-invite" class="btn-icon-label" style="display:none;" title="Copy shareable room link">
         <span>🔗 Invite</span>
       </button>
       <button id="btn-leave-room-header" class="btn-icon-label" style="display:none; color:var(--apple-red); border-color:rgba(239, 68, 68, 0.4);" title="Leave current study room">
@@ -77,6 +77,13 @@
     </div>
 
     <div class="header-actions">
+      <!-- User Stats Pill (Points, Level, Streak, Coins) -->
+      <div class="header-stats-group">
+        <span id="user-points-badge" class="user-points-badge">150 pts</span>
+        <span id="user-gamification-pill" class="chip-badge gamification-pill" title="Level, Streak &amp; Coins">⭐ Lvl 1 | 🔥 1d | 🪙 50</span>
+        <span id="user-streak-badge" class="chip-badge" style="display:none;">🔥 1 Day</span>
+      </div>
+
       <!-- Google Auth Button & Verified Profile Chip -->
       <button type="button" id="btn-google-auth" class="btn-icon-label btn-auth" title="Sign in with Google to sync stats & verified badge">
         <span id="auth-btn-icon">🌐</span> <span id="auth-btn-label">Sign in</span>
@@ -87,29 +94,27 @@
         <span class="user-verified-badge" title="Verified Scholar">✓ Verified</span>
       </div>
 
-      <span id="user-streak-badge" class="chip-badge" style="border-color: rgba(249, 115, 22, 0.4); color: #f97316; font-weight:700;">🔥 1 Day</span>
-      <button id="btn-toggle-fullscreen" class="btn-icon-label" title="Immersive Fullscreen Study Mode">
-        <span>⛶ Immersive</span>
-      </button>
-      <button id="btn-toggle-theme" class="btn-icon-label" title="Switch Theme (Vibrant vs Dark)">
-        <span id="theme-icon">☀️</span> <span id="theme-label">Vibrant</span>
-      </button>
-      <button id="btn-open-noise" class="btn-icon-label" title="Audio: 12 Soundscapes &amp; Study Music">
-        <span>🎧 Audio</span>
-      </button>
-      <span id="user-points-badge" class="user-points-badge">150 pts</span>
-      <span id="user-gamification-pill" class="chip-badge gamification-pill" title="Level, Streak &amp; Coins">⭐ Lvl 1 | 🔥 1d | 🪙 50</span>
+      <!-- Far-Right Action Buttons: Store, Doubts, Boards, Audio, Settings -->
       <button id="btn-open-shop" class="btn-icon-label" title="Store: Themes &amp; Peaceful Desk Pets">
         <span>🛍️ Store</span>
       </button>
-      <button id="btn-open-doubts" class="btn-icon-label" title="Peer Doubt Board & AI Tutor">
+      <button id="btn-open-doubts" class="btn-icon-label" title="Peer Doubt Board &amp; AI Tutor">
         <span>💡 Doubts</span>
       </button>
-      <button id="btn-open-leaderboard" class="btn-icon-label" title="View Top Grinders & Wall of Shame">
+      <button id="btn-open-leaderboard" class="btn-icon-label" title="View Top Grinders &amp; Wall of Shame">
         <span>🏆 Boards</span>
       </button>
-      <button id="btn-open-settings" class="btn-icon-label" title="Settings &amp; Admin Studio">
+      <button id="btn-open-noise" class="btn-icon-label" title="Audio: 12 Soundscapes, YT Music &amp; Spotify">
+        <span>🎧 Audio</span>
+      </button>
+      <button id="btn-open-settings" class="btn-icon-label" title="Settings">
         <span>⚙️ Settings</span>
+      </button>
+      <button id="btn-toggle-fullscreen" class="btn-icon-label" style="display:none;" title="Immersive Fullscreen Study Mode">
+        <span>⛶ Immersive</span>
+      </button>
+      <button id="btn-toggle-theme" class="btn-icon-label" style="display:none;" title="Switch Theme">
+        <span id="theme-icon">☀️</span> <span id="theme-label">Vibrant</span>
       </button>
       <button type="button" id="btn-mobile-menu" class="btn-icon-label mobile-menu-btn" title="Open Menu">
         <span>☰ Menu</span>
@@ -510,8 +515,8 @@
             <input type="checkbox" id="battery-saver-toggle" style="width:18px; height:18px; accent-color:#30d158;">
           </label>
         </div>
-        <!-- Admin PIN Authentication (Hidden from regular users) -->
-        <div id="admin-auth-view" class="admin-auth-box hidden">
+        <!-- Admin PIN Authentication (Hidden by default; revealed via ?admin=true or Ctrl+Shift+A) -->
+        <div id="admin-auth-view" class="admin-auth-box hidden" style="display:none;">
           <h3>Admin Studio Access</h3>
           <p>Protected studio for custom meme sound triggers. Enter your private passcode to manage triggers.</p>
           
@@ -528,7 +533,7 @@
         </div>
 
         <!-- Unlocked Admin Content -->
-        <div id="admin-content-view" class="hidden">
+        <div id="admin-content-view" class="hidden" style="display:none;">
           <div class="firebase-config-section">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
               <div>
@@ -981,13 +986,13 @@
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=5.0"></script>
-  <script src="js/noise-generator.js?v=5.0"></script>
-  <script src="js/firebase-config.js?v=5.0"></script>
-  <script src="js/leaderboard.js?v=5.0"></script>
-  <script src="js/timer.js?v=5.0"></script>
-  <script src="js/webrtc-room.js?v=5.0"></script>
-  <script src="js/trigger-engine.js?v=5.0"></script>
-  <script src="js/app.js?v=5.0"></script>
+  <script src="js/soundboard-admin.js?v=5.1"></script>
+  <script src="js/noise-generator.js?v=5.1"></script>
+  <script src="js/firebase-config.js?v=5.1"></script>
+  <script src="js/leaderboard.js?v=5.1"></script>
+  <script src="js/timer.js?v=5.1"></script>
+  <script src="js/webrtc-room.js?v=5.1"></script>
+  <script src="js/trigger-engine.js?v=5.1"></script>
+  <script src="js/app.js?v=5.1"></script>
 </body>
 </html>

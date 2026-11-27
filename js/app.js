@@ -1046,8 +1046,14 @@ document.addEventListener('DOMContentLoaded', () => {
       window.Soundboard.isAdminAuthenticated = true;
     }
     localStorage.setItem('lockedin_admin_authenticated', 'true');
-    if (adminAuthView) adminAuthView.classList.add('hidden');
-    if (adminContentView) adminContentView.classList.remove('hidden');
+    if (adminAuthView) {
+      adminAuthView.classList.add('hidden');
+      adminAuthView.style.display = 'none';
+    }
+    if (adminContentView) {
+      adminContentView.classList.remove('hidden');
+      adminContentView.style.display = 'block';
+    }
     if (adminPinFeedback) adminPinFeedback.textContent = '';
     try {
       renderAdminSoundboardList();
@@ -1056,29 +1062,56 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  const settingsModalTitle = document.getElementById('settings-modal-title');
-  let adminRevealClicks = 0;
   let adminPromptRevealed = (urlParams.get('admin') === 'true');
 
-  if (settingsModalTitle) {
-    settingsModalTitle.addEventListener('click', () => {
-      adminRevealClicks++;
-      if (adminRevealClicks >= 5) {
-        adminPromptRevealed = true;
-        adminRevealClicks = 0;
-        if (window.Soundboard && !window.Soundboard.isAdminAuthenticated && adminAuthView) {
-          adminAuthView.classList.remove('hidden');
-        }
+  function syncAdminVisibilityInSettings() {
+    if (!adminPromptRevealed) {
+      if (adminAuthView) {
+        adminAuthView.classList.add('hidden');
+        adminAuthView.style.display = 'none';
       }
-    });
+      if (adminContentView) {
+        adminContentView.classList.add('hidden');
+        adminContentView.style.display = 'none';
+      }
+      return;
+    }
+    if (window.Soundboard && window.Soundboard.isAdminAuthenticated) {
+      if (adminAuthView) {
+        adminAuthView.classList.add('hidden');
+        adminAuthView.style.display = 'none';
+      }
+      if (adminContentView) {
+        adminContentView.classList.remove('hidden');
+        adminContentView.style.display = 'block';
+      }
+      try {
+        renderAdminSoundboardList();
+      } catch (e) {
+        console.warn('[Admin] Render list error:', e);
+      }
+    } else {
+      if (adminAuthView) {
+        adminAuthView.classList.remove('hidden');
+        adminAuthView.style.display = 'block';
+      }
+      if (adminContentView) {
+        adminContentView.classList.add('hidden');
+        adminContentView.style.display = 'none';
+      }
+      if (adminPinFeedback) adminPinFeedback.textContent = '';
+    }
   }
 
-  function isOwnerAccount() {
-    const email = window.FirebaseSync?.auth?.currentUser?.email;
-    if (!email) return false;
-    const ownerEmail = localStorage.getItem('lockedin_owner_email');
-    return !!(ownerEmail && email.toLowerCase() === ownerEmail.toLowerCase());
-  }
+  // Hidden Admin Shortcut: Ctrl + Shift + A
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyA') {
+      e.preventDefault();
+      adminPromptRevealed = true;
+      if (adminModal) adminModal.classList.remove('hidden');
+      syncAdminVisibilityInSettings();
+    }
+  });
 
   if (openSettingsBtn && adminModal) {
     openSettingsBtn.addEventListener('click', () => {
@@ -1091,23 +1124,7 @@ document.addEventListener('DOMContentLoaded', () => {
           : 'Cloud Disconnected';
       }
       adminModal.classList.remove('hidden');
-      if (window.Soundboard && window.Soundboard.isAdminAuthenticated) {
-        if (adminAuthView) adminAuthView.classList.add('hidden');
-        if (adminContentView) adminContentView.classList.remove('hidden');
-        try {
-          renderAdminSoundboardList();
-        } catch (e) {
-          console.warn('[Admin] Render list error:', e);
-        }
-      } else if (adminPromptRevealed || isOwnerAccount()) {
-        if (adminAuthView) adminAuthView.classList.remove('hidden');
-        if (adminContentView) adminContentView.classList.add('hidden');
-        if (adminPinFeedback) adminPinFeedback.textContent = '';
-      } else {
-        // Hide Admin Studio completely from regular users
-        if (adminAuthView) adminAuthView.classList.add('hidden');
-        if (adminContentView) adminContentView.classList.add('hidden');
-      }
+      syncAdminVisibilityInSettings();
     });
   }
 
