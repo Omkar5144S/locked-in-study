@@ -867,10 +867,44 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Camera Background / Privacy Filter Selector & Quick Cycle Button
-  const VIDEO_FILTERS = ['none', 'bg-blur', 'privacy-blur', 'bg-dim', 'bw'];
+  // Camera Background / Virtual Background Selector & Quick Cycle Button
+  const VIDEO_FILTERS = ['none', 'bg-blur', 'bg-library', 'bg-cafe', 'bg-aurora', 'bg-minimal', 'bg-custom', 'privacy-blur', 'bg-dim', 'bw'];
   const videoFilterSelect = document.getElementById('video-filter-select');
   const cycleFilterBtn = document.getElementById('btn-cycle-filter');
+  const customBgFileInput = document.getElementById('custom-bg-file-input');
+
+  if (customBgFileInput) {
+    customBgFileInput.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = async () => {
+          const c = document.createElement('canvas');
+          c.width = 640;
+          c.height = 480;
+          const ctx = c.getContext('2d');
+          const scale = Math.max(c.width / img.width, c.height / img.height);
+          const dw = img.width * scale;
+          const dh = img.height * scale;
+          ctx.drawImage(img, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
+          try {
+            localStorage.setItem('lockedin_custom_bg_image', c.toDataURL('image/jpeg', 0.82));
+          } catch (err) {
+            console.warn('[WebRTC] Custom background too large for localStorage:', err);
+          }
+          if (videoFilterSelect) videoFilterSelect.value = 'bg-custom';
+          if (window.WebRTCRoom && window.WebRTCRoom.setVideoFilter) {
+            await window.WebRTCRoom.setVideoFilter('bg-custom', true);
+          }
+          showToast('🖼️ Custom virtual background applied!');
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
 
   if (videoFilterSelect) {
     const savedFilter = localStorage.getItem('lockedin_video_filter') || 'none';
@@ -2443,7 +2477,7 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
 
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2468,7 +2502,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } finally {
         askGeminiBtn.disabled = false;
-        askGeminiBtn.textContent = '⚡ Ask Gemini 2.5 Flash';
+        askGeminiBtn.textContent = '⚡ Ask Gemini 3.8 Flash';
       }
     });
   }

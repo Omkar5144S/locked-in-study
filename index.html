@@ -496,17 +496,29 @@
           </div>
           <label style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);">
             <div>
-              <strong style="font-size:0.88rem;">🎭 Camera Background Filter</strong>
-              <div style="font-size:0.75rem; color:var(--text-muted);">Hide or blur your background for peers</div>
+              <strong style="font-size:0.88rem;">🎭 Virtual Background &amp; Filter</strong>
+              <div style="font-size:0.75rem; color:var(--text-muted);">Blur or replace your background (green-screen AI)</div>
             </div>
-            <select id="video-filter-select" class="form-input" style="width:auto; min-width:155px; padding:6px 10px; font-size:0.84rem;">
+            <select id="video-filter-select" class="form-input" style="width:auto; min-width:165px; padding:6px 10px; font-size:0.84rem;">
               <option value="none" selected>Off (Raw Cam)</option>
               <option value="bg-blur">🌫️ Background Blur</option>
+              <option value="bg-library">📚 Cozy Library</option>
+              <option value="bg-cafe">☕ Rainy Cafe</option>
+              <option value="bg-aurora">🌌 Nordic Aurora</option>
+              <option value="bg-minimal">🪨 Minimal Studio</option>
+              <option value="bg-custom">🖼️ Custom Photo</option>
               <option value="privacy-blur">🫧 Soft Privacy Blur</option>
               <option value="bg-dim">🌑 Dark Vignette</option>
               <option value="bw">🎬 Monochrome</option>
             </select>
           </label>
+          <div id="custom-bg-upload-row" style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding-top:6px;">
+            <span style="font-size:0.76rem; color:var(--text-muted);">Custom Background Image:</span>
+            <label class="mod-btn" style="cursor:pointer; font-size:0.76rem; padding:5px 10px;">
+              📁 Upload Photo
+              <input type="file" id="custom-bg-file-input" accept="image/*" style="display:none;">
+            </label>
+          </div>
           <label style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);">
             <div>
               <strong style="font-size:0.88rem;">🎥 Video Quality</strong>
@@ -936,7 +948,7 @@
             <input type="file" id="ai-tutor-image-file" accept="image/*" style="display:none;">
           </label>
           <span id="ai-tutor-image-filename" style="font-size:0.75rem; color:var(--text-muted); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
-          <button type="button" id="btn-ask-gemini" class="btn-primary-action" style="padding:8px 16px; font-size:0.85rem;">⚡ Ask Gemini 2.5 Flash</button>
+          <button type="button" id="btn-ask-gemini" class="btn-primary-action" style="padding:8px 16px; font-size:0.85rem;">⚡ Ask Gemini 3.8 Flash</button>
         </div>
         <div id="ai-tutor-image-preview-box" class="hidden" style="margin-top:8px;">
           <img id="ai-tutor-image-preview" src="" style="max-height:100px; border-radius:6px; border:1px solid rgba(255,255,255,0.15);" />
@@ -1035,13 +1047,13 @@
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=5.4"></script>
-  <script src="js/noise-generator.js?v=5.4"></script>
-  <script src="js/firebase-config.js?v=5.4"></script>
-  <script src="js/leaderboard.js?v=5.4"></script>
-  <script src="js/timer.js?v=5.4"></script>
-  <script src="js/webrtc-room.js?v=5.4"></script>
-  <script src="js/trigger-engine.js?v=5.4"></script>
-  <script src="js/app.js?v=5.4"></script>
+  <script src="js/soundboard-admin.js?v=5.5"></script>
+  <script src="js/noise-generator.js?v=5.5"></script>
+  <script src="js/firebase-config.js?v=5.5"></script>
+  <script src="js/leaderboard.js?v=5.5"></script>
+  <script src="js/timer.js?v=5.5"></script>
+  <script src="js/webrtc-room.js?v=5.5"></script>
+  <script src="js/trigger-engine.js?v=5.5"></script>
+  <script src="js/app.js?v=5.5"></script>
 </body>
 </html>

@@ -1235,8 +1235,93 @@ class WebRTCRoomManager {
     }
   }
 
-  async setVideoFilter(filterName) {
-    const valid = ['none', 'bg-blur', 'privacy-blur', 'bg-dim', 'bw'];
+  _getVirtualBgCanvas(mode, w, h, forceReload = false) {
+    if (!this._virtualBgCache) this._virtualBgCache = {};
+    if (!forceReload && this._virtualBgCache[mode]) return this._virtualBgCache[mode];
+
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d');
+
+    if (mode === 'bg-custom') {
+      const dataUrl = localStorage.getItem('lockedin_custom_bg_image');
+      if (dataUrl) {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.max(w / img.width, h / img.height);
+          const dw = img.width * scale;
+          const dh = img.height * scale;
+          g.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+        };
+        img.src = dataUrl;
+        this._virtualBgCache[mode] = c;
+        return c;
+      }
+      // Fallback gradient if no custom photo uploaded yet
+      mode = 'bg-minimal';
+    }
+
+    if (mode === 'bg-library') {
+      const grad = g.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, '#1e1610');
+      grad.addColorStop(1, '#0d0906');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, w, h);
+      // Warm bookshelf silhouettes + desk lamp bokeh
+      g.fillStyle = 'rgba(245, 158, 11, 0.14)';
+      g.beginPath(); g.arc(w * 0.8, h * 0.28, w * 0.22, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(120, 72, 36, 0.25)';
+      for (let y = h * 0.22; y < h * 0.85; y += h * 0.22) {
+        g.fillRect(0, y, w * 0.42, 4);
+        g.fillRect(w * 0.58, y, w * 0.42, 4);
+      }
+    } else if (mode === 'bg-cafe') {
+      const grad = g.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, '#0f172a');
+      grad.addColorStop(0.6, '#1e1b4b');
+      grad.addColorStop(1, '#291c14');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, w, h);
+      const bokeh = [
+        [0.18, 0.25, 28, 'rgba(251, 191, 36, 0.22)'],
+        [0.3, 0.42, 18, 'rgba(245, 158, 11, 0.18)'],
+        [0.82, 0.22, 34, 'rgba(56, 189, 248, 0.16)'],
+        [0.72, 0.52, 22, 'rgba(251, 146, 60, 0.20)']
+      ];
+      bokeh.forEach(([bx, by, br, col]) => {
+        g.fillStyle = col;
+        g.beginPath(); g.arc(w * bx, h * by, br, 0, Math.PI * 2); g.fill();
+      });
+    } else if (mode === 'bg-aurora') {
+      const grad = g.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, '#030712');
+      grad.addColorStop(1, '#0b1120');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, w, h);
+      const a1 = g.createRadialGradient(w * 0.3, h * 0.25, 10, w * 0.3, h * 0.25, w * 0.45);
+      a1.addColorStop(0, 'rgba(16, 185, 129, 0.38)');
+      a1.addColorStop(1, 'rgba(16, 185, 129, 0)');
+      g.fillStyle = a1; g.fillRect(0, 0, w, h);
+      const a2 = g.createRadialGradient(w * 0.72, h * 0.32, 10, w * 0.72, h * 0.32, w * 0.42);
+      a2.addColorStop(0, 'rgba(56, 189, 248, 0.32)');
+      a2.addColorStop(1, 'rgba(56, 189, 248, 0)');
+      g.fillStyle = a2; g.fillRect(0, 0, w, h);
+    } else {
+      // bg-minimal
+      const grad = g.createRadialGradient(w * 0.5, h * 0.2, 10, w * 0.5, h * 0.5, w * 0.7);
+      grad.addColorStop(0, '#272b36');
+      grad.addColorStop(1, '#0d0f14');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, w, h);
+    }
+
+    this._virtualBgCache[mode] = c;
+    return c;
+  }
+
+  async setVideoFilter(filterName, forceReloadBg = false) {
+    const valid = ['none', 'bg-blur', 'bg-library', 'bg-cafe', 'bg-aurora', 'bg-minimal', 'bg-custom', 'privacy-blur', 'bg-dim', 'bw'];
     const mode = valid.includes(filterName) ? filterName : 'none';
     this.activeVideoFilter = mode;
     localStorage.setItem('lockedin_video_filter', mode);
@@ -1244,6 +1329,11 @@ class WebRTCRoomManager {
     const filterLabels = {
       'none': '🎭 Filter: Off',
       'bg-blur': '🌫️ BG Blur',
+      'bg-library': '📚 Library',
+      'bg-cafe': '☕ Cafe',
+      'bg-aurora': '🌌 Aurora',
+      'bg-minimal': '🪨 Studio',
+      'bg-custom': '🖼️ Custom BG',
       'privacy-blur': '🫧 Soft Blur',
       'bg-dim': '🌑 Vignette',
       'bw': '🎬 Mono'
@@ -1267,16 +1357,23 @@ class WebRTCRoomManager {
       return;
     }
 
-    if (mode === 'bg-blur') {
+    const usesSegmentation = ['bg-blur', 'bg-library', 'bg-cafe', 'bg-aurora', 'bg-minimal', 'bg-custom'].includes(mode);
+    if (usesSegmentation) {
       this._ensureSelfieSegmentation();
     }
 
+    const isLowEnd = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) || (navigator.deviceMemory && navigator.deviceMemory <= 3);
+    const targetW = isLowEnd ? 320 : 480;
+    const targetH = isLowEnd ? 240 : 360;
+    const targetFps = isLowEnd ? 12 : 15;
+
     if (!this._filterCanvas) {
       this._filterCanvas = document.createElement('canvas');
-      this._filterCanvas.width = 480;
-      this._filterCanvas.height = 360;
       this._filterCtx = this._filterCanvas.getContext('2d', { alpha: false });
     }
+    this._filterCanvas.width = targetW;
+    this._filterCanvas.height = targetH;
+
     if (!this._blurTmpCanvas) {
       this._blurTmpCanvas = document.createElement('canvas');
       this._blurTmpCanvas.width = 64;
@@ -1303,6 +1400,10 @@ class WebRTCRoomManager {
     const tmpCtx = this._blurTmpCtx;
     let segBusy = false;
 
+    if (forceReloadBg && this._virtualBgCache) {
+      delete this._virtualBgCache[mode];
+    }
+
     // Fast GPU-friendly downscale/upscale blur (<1ms vs 40ms CPU ctx.filter)
     const drawFastBlurredVideo = () => {
       tmpCtx.drawImage(this._filterVideoEl, 0, 0, tmpCanvas.width, tmpCanvas.height);
@@ -1327,7 +1428,7 @@ class WebRTCRoomManager {
         grad.addColorStop(1, 'rgba(8,10,16,0.92)');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
-      } else if (this.activeVideoFilter === 'bg-blur') {
+      } else if (['bg-blur', 'bg-library', 'bg-cafe', 'bg-aurora', 'bg-minimal', 'bg-custom'].includes(this.activeVideoFilter)) {
         if (this._selfieSegmentation && !segBusy) {
           segBusy = true;
           this._selfieSegmentation.send({ image: this._filterVideoEl }).catch(() => {}).finally(() => { segBusy = false; });
@@ -1338,18 +1439,37 @@ class WebRTCRoomManager {
           ctx.globalCompositeOperation = 'source-in';
           ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
           ctx.globalCompositeOperation = 'destination-over';
+          if (this.activeVideoFilter === 'bg-blur') {
+            drawFastBlurredVideo();
+          } else {
+            const bgCanvas = this._getVirtualBgCanvas(this.activeVideoFilter, w, h);
+            ctx.drawImage(bgCanvas, 0, 0, w, h);
+          }
+        } else if (this.activeVideoFilter === 'bg-blur') {
           drawFastBlurredVideo();
         } else {
-          drawFastBlurredVideo();
+          const bgCanvas = this._getVirtualBgCanvas(this.activeVideoFilter, w, h);
+          ctx.drawImage(bgCanvas, 0, 0, w, h);
         }
       }
       ctx.restore();
     };
 
     renderFrame();
-    this._filterLoopId = setInterval(renderFrame, 66); // 15fps smooth low-CPU filter loop
+    this._filterLoopId = setInterval(renderFrame, Math.round(1000 / targetFps));
 
-    const captured = this._filterCanvas.captureStream(15);
+    let captured = null;
+    try {
+      captured = this._filterCanvas.captureStream ? this._filterCanvas.captureStream(targetFps) : null;
+    } catch (err) {
+      console.warn('[WebRTC] Canvas captureStream unavailable on this browser:', err);
+    }
+    if (!captured) {
+      this.stopVideoFilterLoop();
+      this.localCamStream = this.rawCamStream;
+      this._refreshLocalCamPreview();
+      return;
+    }
     const outStream = new MediaStream();
     const filteredVidTrack = captured.getVideoTracks()[0];
     if (filteredVidTrack) {
