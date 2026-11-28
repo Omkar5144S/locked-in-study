@@ -1203,33 +1203,43 @@ class WebRTCRoomManager {
   }
 
   async _ensureSelfieSegmentation() {
-    if (this._selfieSegmentation || this._selfieSegLoading) return;
+    if (this._imageSegmenter || this._selfieSegLoading) return;
     this._selfieSegLoading = true;
     try {
-      if (!window.SelfieSegmentation) {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js';
-          s.async = true;
-          s.crossOrigin = 'anonymous';
-          s.onload = resolve;
-          s.onerror = reject;
-          document.head.appendChild(s);
-        });
-      }
-      if (window.SelfieSegmentation) {
-        const seg = new window.SelfieSegmentation({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
-        });
-        seg.setOptions({ modelSelection: 1 });
-        seg.onResults((results) => {
-          this._latestSegMask = results.segmentationMask || null;
-        });
-        this._selfieSegmentation = seg;
-        console.log('[WebRTC] MediaPipe SelfieSegmentation ready for background blur.');
-      }
+      const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+      const filesetResolver = await vision.FilesetResolver.forVisionTasks(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+      );
+      this._imageSegmenter = await vision.ImageSegmenter.createFromOptions(filesetResolver, {
+        baseOptions: {
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',
+          delegate: 'GPU'
+        },
+        runningMode: 'VIDEO',
+        outputCategoryMask: false,
+        outputConfidenceMasks: true
+      });
+      console.log('[WebRTC] MediaPipe ImageSegmenter (Zoom-grade) ready.');
     } catch (err) {
-      console.warn('[WebRTC] SelfieSegmentation unavailable, using soft privacy blur fallback:', err);
+      console.warn('[WebRTC] GPU ImageSegmenter failed, retrying CPU/WASM fallback:', err);
+      try {
+        const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+        const filesetResolver = await vision.FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+        );
+        this._imageSegmenter = await vision.ImageSegmenter.createFromOptions(filesetResolver, {
+          baseOptions: {
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',
+            delegate: 'CPU'
+          },
+          runningMode: 'VIDEO',
+          outputCategoryMask: false,
+          outputConfidenceMasks: true
+        });
+        console.log('[WebRTC] MediaPipe ImageSegmenter (CPU fallback) ready.');
+      } catch (err2) {
+        console.warn('[WebRTC] ImageSegmenter unavailable, using soft privacy blur fallback:', err2);
+      }
     } finally {
       this._selfieSegLoading = false;
     }
@@ -1363,9 +1373,30 @@ class WebRTCRoomManager {
     }
 
     const isLowEnd = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) || (navigator.deviceMemory && navigator.deviceMemory <= 3);
-    const targetW = isLowEnd ? 320 : 480;
-    const targetH = isLowEnd ? 240 : 360;
-    const targetFps = isLowEnd ? 12 : 15;
+    const maxDim = isLowEnd ? 320 : 480;
+    const targetFps = isLowEnd ? 12 : 16;
+
+    if (!this._filterVideoEl) {
+      this._filterVideoEl = document.createElement('video');
+      this._filterVideoEl.playsInline = true;
+      this._filterVideoEl.muted = true;
+      this._filterVideoEl.autoplay = true;
+      // Must be in DOM for Android Chrome & iOS Safari to decode frames continuously
+      this._filterVideoEl.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:2px;height:2px;opacity:0.01;pointer-events:none;';
+      document.body.appendChild(this._filterVideoEl);
+    }
+    if (this._filterVideoEl.srcObject !== this.rawCamStream) {
+      this._filterVideoEl.srcObject = this.rawCamStream;
+      this._filterVideoEl.play().catch(() => {});
+    }
+
+    // Match actual camera orientation (portrait on phones, landscape on desktop)
+    const rawSettings = this.rawCamStream.getVideoTracks()[0]?.getSettings?.() || {};
+    const srcW = this._filterVideoEl.videoWidth || rawSettings.width || 480;
+    const srcH = this._filterVideoEl.videoHeight || rawSettings.height || 360;
+    const scale = maxDim / Math.max(srcW, srcH);
+    const targetW = Math.max(160, Math.round(srcW * scale));
+    const targetH = Math.max(160, Math.round(srcH * scale));
 
     if (!this._filterCanvas) {
       this._filterCanvas = document.createElement('canvas');
@@ -1374,21 +1405,16 @@ class WebRTCRoomManager {
     this._filterCanvas.width = targetW;
     this._filterCanvas.height = targetH;
 
+    if (!this._maskCanvas) {
+      this._maskCanvas = document.createElement('canvas');
+      this._maskCtx = this._maskCanvas.getContext('2d');
+    }
+
     if (!this._blurTmpCanvas) {
       this._blurTmpCanvas = document.createElement('canvas');
       this._blurTmpCanvas.width = 64;
       this._blurTmpCanvas.height = 48;
       this._blurTmpCtx = this._blurTmpCanvas.getContext('2d', { alpha: false });
-    }
-    if (!this._filterVideoEl) {
-      this._filterVideoEl = document.createElement('video');
-      this._filterVideoEl.playsInline = true;
-      this._filterVideoEl.muted = true;
-      this._filterVideoEl.autoplay = true;
-    }
-    if (this._filterVideoEl.srcObject !== this.rawCamStream) {
-      this._filterVideoEl.srcObject = this.rawCamStream;
-      this._filterVideoEl.play().catch(() => {});
     }
 
     this.stopVideoFilterLoop();
@@ -1398,7 +1424,6 @@ class WebRTCRoomManager {
     const ctx = this._filterCtx;
     const tmpCanvas = this._blurTmpCanvas;
     const tmpCtx = this._blurTmpCtx;
-    let segBusy = false;
 
     if (forceReloadBg && this._virtualBgCache) {
       delete this._virtualBgCache[mode];
@@ -1429,13 +1454,45 @@ class WebRTCRoomManager {
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, w, h);
       } else if (['bg-blur', 'bg-library', 'bg-cafe', 'bg-aurora', 'bg-minimal', 'bg-custom'].includes(this.activeVideoFilter)) {
-        if (this._selfieSegmentation && !segBusy) {
-          segBusy = true;
-          this._selfieSegmentation.send({ image: this._filterVideoEl }).catch(() => {}).finally(() => { segBusy = false; });
+        let hasMask = false;
+        if (this._imageSegmenter) {
+          try {
+            const result = this._imageSegmenter.segmentForVideo(this._filterVideoEl, performance.now());
+            const mask = result?.confidenceMasks?.[0];
+            if (mask) {
+              const mw = mask.width;
+              const mh = mask.height;
+              if (this._maskCanvas.width !== mw || this._maskCanvas.height !== mh) {
+                this._maskCanvas.width = mw;
+                this._maskCanvas.height = mh;
+                this._maskImgData = this._maskCtx.createImageData(mw, mh);
+              }
+              const floats = mask.getAsFloat32Array();
+              const pixels = this._maskImgData.data;
+              for (let i = 0; i < floats.length; i++) {
+                // Smooth Zoom-style edge feathering between 0.35 and 0.68 confidence
+                const p = floats[i];
+                const alpha = p <= 0.35 ? 0 : (p >= 0.68 ? 255 : ((p - 0.35) / 0.33) * 255);
+                const idx = i * 4;
+                pixels[idx] = 255;
+                pixels[idx + 1] = 255;
+                pixels[idx + 2] = 255;
+                pixels[idx + 3] = alpha;
+              }
+              this._maskCtx.putImageData(this._maskImgData, 0, 0);
+              hasMask = true;
+            }
+            if (result?.close) result.close();
+          } catch (segErr) {
+            // Keep running smoothly on fallback if a frame fails
+          }
         }
-        if (this._latestSegMask) {
+
+        if (hasMask) {
           ctx.clearRect(0, 0, w, h);
-          ctx.drawImage(this._latestSegMask, 0, 0, w, h);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'medium';
+          ctx.drawImage(this._maskCanvas, 0, 0, w, h);
           ctx.globalCompositeOperation = 'source-in';
           ctx.drawImage(this._filterVideoEl, 0, 0, w, h);
           ctx.globalCompositeOperation = 'destination-over';
