@@ -1853,8 +1853,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const tab = btn.getAttribute('data-roomtab');
       const chatTab = document.getElementById('room-tab-chat');
       const todoTab = document.getElementById('room-tab-todo');
+      const duelTab = document.getElementById('room-tab-duel');
       if (chatTab) chatTab.classList.toggle('hidden', tab !== 'chat');
       if (todoTab) todoTab.classList.toggle('hidden', tab !== 'todo');
+      if (duelTab) duelTab.classList.toggle('hidden', tab !== 'duel');
     });
   });
 

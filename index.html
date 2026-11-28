@@ -32,7 +32,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=5.0">
+  <link rel="stylesheet" href="styles.css?v=5.1">
 
   <!-- Firebase Web SDK v10 (Compat CDN for zero-build static hosting) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -171,6 +171,34 @@
           <label for="input-subject-goal">Study Goal</label>
           <input type="text" id="input-subject-goal" class="form-input" placeholder="e.g. Organic Chemistry" maxlength="50">
         </div>
+      </div>
+
+      <!-- Compact Exam Countdown, Daily Goal, Heatmap & Referral Strip -->
+      <div class="growth-bar">
+        <div class="growth-top-row">
+          <div class="growth-exam-meta">
+            <strong id="growth-exam-title">🎯 Target Exam</strong>
+            <span id="growth-exam-days" class="chip-badge" style="font-size:0.7rem; padding:2px 7px;">45d left</span>
+            <button type="button" id="btn-edit-exam-target" class="mod-btn" style="font-size:0.7rem; padding:2px 7px;" title="Edit Exam & Daily Goal">✏️ Goal</button>
+          </div>
+          <div class="growth-actions-meta">
+            <button type="button" id="btn-buy-streak-freeze" class="mod-btn" style="font-size:0.72rem; padding:3px 8px;" title="Buy Streak Freeze (100 Coins)"><span id="growth-freeze-count">0 ❄️</span> Freeze</button>
+            <button type="button" id="btn-copy-referral-link" class="mod-btn" style="font-size:0.72rem; padding:3px 8px;" title="Invite friend for +50 Coins">🎁 Invite +50🪙</button>
+          </div>
+        </div>
+        <div id="growth-exam-editor" class="growth-exam-editor hidden">
+          <input type="text" id="input-exam-name" class="form-input" placeholder="Exam (e.g. JEE Main)" maxlength="28" style="padding:6px 10px; font-size:0.78rem;">
+          <input type="date" id="input-exam-date" class="form-input" style="padding:6px 10px; font-size:0.78rem;">
+          <input type="number" id="input-exam-goal" class="form-input" min="15" max="720" placeholder="Mins/day" style="padding:6px 10px; font-size:0.78rem; width:90px;">
+          <button type="button" id="btn-save-exam-target" class="btn-timer btn-play" style="padding:6px 12px; font-size:0.76rem;">Save</button>
+        </div>
+        <div class="growth-progress-row">
+          <span id="growth-daily-text" style="font-size:0.72rem; color:var(--text-secondary);">0m / 120m today (0%)</span>
+          <div class="todo-progress-track" style="flex:1; margin:0; height:6px;">
+            <div id="growth-daily-fill" class="todo-progress-fill" style="width:0%;"></div>
+          </div>
+        </div>
+        <div id="growth-heatmap-grid" class="heatmap-grid" title="12-Week Study Consistency Heatmap"></div>
       </div>
 
       <div class="form-group">
@@ -385,6 +413,7 @@
       <div class="room-drawer-tabs">
         <button type="button" class="room-drawer-tab-btn active" data-roomtab="chat">💬 Chat</button>
         <button type="button" class="room-drawer-tab-btn" data-roomtab="todo">✅ To-Do <span id="todo-progress-count" class="chip-badge" style="font-size:0.7rem; padding:1px 6px; margin-left:4px;">0/0</span></button>
+        <button type="button" class="room-drawer-tab-btn" data-roomtab="duel">⚔️ Duel</button>
       </div>
 
       <!-- Tab 1: Real-Time Room Chat -->
@@ -418,6 +447,23 @@
         <ul id="todo-list" class="todo-list"></ul>
         <div style="display:flex; justify-content:flex-end; margin-top:8px;">
           <button type="button" id="btn-clear-done-todos" class="mod-btn" style="font-size:0.74rem; padding:4px 10px;">🧹 Clear Completed</button>
+        </div>
+      </div>
+
+      <!-- Tab 3: 1v1 Accountability Focus Duel -->
+      <div id="room-tab-duel" class="drawer-body hidden">
+        <div class="duel-card">
+          <h4 style="margin:0 0 6px 0; font-size:0.95rem;">⚔️ Accountability Focus Duel</h4>
+          <p style="font-size:0.78rem; color:var(--text-secondary); margin:0 0 12px 0;">Wager Coins on finishing this Pomodoro with <strong>0 Tab Guard strikes</strong>. Win <strong>2×</strong> your wager!</p>
+          <div id="duel-setup-box" style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button type="button" class="btn-timer btn-play btn-start-duel" data-wager="25" style="flex:1; padding:8px 10px; font-size:0.8rem;">⚔️ Wager 25 🪙</button>
+            <button type="button" class="btn-timer btn-play btn-start-duel" data-wager="50" style="flex:1; padding:8px 10px; font-size:0.8rem;">⚔️ Wager 50 🪙</button>
+            <button type="button" class="btn-timer btn-play btn-start-duel" data-wager="100" style="flex:1; padding:8px 10px; font-size:0.8rem;">🔥 Wager 100 🪙</button>
+          </div>
+          <div id="duel-active-box" class="hidden" style="margin-top:10px; padding:10px; border-radius:10px; background:rgba(48,209,88,0.1); border:1px solid rgba(48,209,88,0.35);">
+            <div style="font-size:0.82rem; font-weight:700; color:#30d158;">⚡ Duel Active: <span id="duel-active-wager">25 🪙 → Win 50 🪙</span></div>
+            <button type="button" id="btn-forfeit-duel" class="mod-btn" style="margin-top:8px; font-size:0.74rem; padding:4px 10px;">🏳️ Forfeit Duel</button>
+          </div>
         </div>
       </div>
     </aside>
@@ -948,6 +994,7 @@
             <input type="file" id="ai-tutor-image-file" accept="image/*" style="display:none;">
           </label>
           <span id="ai-tutor-image-filename" style="font-size:0.75rem; color:var(--text-muted); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+          <button type="button" id="btn-ai-session-coach" class="mod-btn" style="padding:7px 12px; font-size:0.78rem;" title="Auto-summarize your study goal & tasks + generate 2 quiz questions">🧠 Recap &amp; Quiz</button>
           <button type="button" id="btn-ask-gemini" class="btn-primary-action" style="padding:8px 16px; font-size:0.85rem;">⚡ Ask Gemini 3.8 Flash</button>
         </div>
         <div id="ai-tutor-image-preview-box" class="hidden" style="margin-top:8px;">
@@ -958,7 +1005,7 @@
       <!-- AI Tutor Explanation Display -->
       <div id="ai-tutor-response-box" class="ai-response-box hidden">
         <div class="ai-response-header">
-          <span style="font-size:0.85rem; font-weight:700;">🤖 Gemini 2.5 Flash Tutor</span>
+          <span style="font-size:0.85rem; font-weight:700;">🤖 Gemini 3.8 Flash Coach</span>
           <button type="button" id="btn-copy-ai-response" class="mod-btn" style="padding:2px 8px; font-size:0.72rem;">📋 Copy</button>
         </div>
         <div id="ai-tutor-output" class="ai-response-content"></div>
@@ -1047,13 +1094,14 @@
   <div id="app-toast" class="app-toast hidden"></div>
 
   <!-- App Modular Scripts -->
-  <script src="js/soundboard-admin.js?v=5.6"></script>
-  <script src="js/noise-generator.js?v=5.6"></script>
-  <script src="js/firebase-config.js?v=5.6"></script>
-  <script src="js/leaderboard.js?v=5.6"></script>
-  <script src="js/timer.js?v=5.6"></script>
-  <script src="js/webrtc-room.js?v=5.6"></script>
-  <script src="js/trigger-engine.js?v=5.6"></script>
-  <script src="js/app.js?v=5.6"></script>
+  <script src="js/soundboard-admin.js?v=5.7"></script>
+  <script src="js/noise-generator.js?v=5.7"></script>
+  <script src="js/firebase-config.js?v=5.7"></script>
+  <script src="js/leaderboard.js?v=5.7"></script>
+  <script src="js/timer.js?v=5.7"></script>
+  <script src="js/webrtc-room.js?v=5.7"></script>
+  <script src="js/trigger-engine.js?v=5.7"></script>
+  <script src="js/growth-features.js?v=5.7"></script>
+  <script src="js/app.js?v=5.7"></script>
 </body>
 </html>

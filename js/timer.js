@@ -155,6 +155,11 @@ class StudyTimerManager {
         this.showToast(`🏆 FOCUS BLOCK VICTORY! Distraction-Free (${rewardMsg})`);
       }
 
+      // Record daily heatmap & settle Focus Duel
+      if (window.GrowthFeatures && window.GrowthFeatures.onFocusComplete) {
+        window.GrowthFeatures.onFocusComplete(this.focusDurationMinutes, this.triggersInCurrentBlock === 0);
+      }
+
       // Auto-clear any lingering shame stamp on focus block completion
       if (window.TriggerEngine && window.TriggerEngine.clearLocalShame) {
         window.TriggerEngine.clearLocalShame('Focus block completed');
@@ -195,6 +200,9 @@ class StudyTimerManager {
   // Distraction Strike: Bold Red X across timer & reset current block progress
   punishAndReset() {
     this.triggersInCurrentBlock++;
+    if (window.GrowthFeatures && window.GrowthFeatures.onDuelStrike) {
+      window.GrowthFeatures.onDuelStrike();
+    }
     const timerDisplay = document.getElementById('local-timer-display');
     if (timerDisplay) {
       timerDisplay.classList.add('timer-struck-red-x');
